@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="container">
+    
+    {% for service in services %}
+    <a href="{% url 'service_detail' service.id %}" class="card">
+        <p class="title">{{ service.name }}</p>
+        <ul class="features">
+            {% for feature in service.features %}
+            <li>{{ feature }}</li>
+            {% endfor %}
+        </ul>
+        {% if service.price %}
+        <p class="price">от {{ service.price }} руб.</p>
+        {% endif %}
+        <div class="button-container">
+            <span class="card-button">Подробнее об услуге</span>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% endblock %}

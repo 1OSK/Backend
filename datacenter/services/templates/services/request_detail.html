@@ -1,0 +1,22 @@
+<!-- templates/services/request_detail.html -->
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <nav class="breadcrumbs">
+        <a href="{% url 'service_list' %}" class="breadcrumb-link">Список услуг</a> &gt; 
+        Заявка #{{ request.id }}
+    </nav>
+    <h1 class="page-title">Заявка #{{ request.id }}</h1>
+
+    <ul class="service-list">
+        {% for service in services %}
+        <li class="service-item">
+            <span class="service-name">{{ service.name }}</span> - 
+            <span class="service-price">{{ service.price }} руб.</span>
+        </li>
+        {% endfor %}
+    </ul>
+
+</div>
+{% endblock %}
