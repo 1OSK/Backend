@@ -6,48 +6,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Data center{% endblock %}</title>
     {% load static %}
-    <link rel="stylesheet" href="{% static 'styles.css' %}" /> 
+    <link rel="stylesheet" href="{% static 'styles.css' %}" />
 </head>
 <body>
     <header class="main-header">
         <nav class="main-nav">
             <a href="{% url 'service_list' %}" class="header-title">Data Center</a>
         </nav>
-        <!-- Новая секция для города и телефона -->
-        <div class="contact-info">
-            <p class="city">москва</p>
-            <p class="phone-number">+7 (495) 123-45-67</p>
-        </div>
     </header>
+
     <!-- Навигационный блок -->
-<nav class="navigation-bar">
-    <ul class="nav-links">
-        <li><a href="{% url 'service_list' %}">Главная</a></li>
-        <li><a href="#">О нас</a></li>
-    </ul>
+    <nav class="navigation-bar">
+        <!-- Форма поиска по цене и кнопка текущей заявки только на странице списка услуг -->
+        {% if request.path == '/' %}
+        <form method="get" action="{% url 'service_list' %}" class="search-form">
+            <input type="number" name="price" placeholder="Максимальная цена..." value="{{ price_query }}" class="search-input">
+            <button type="submit" class="search-button">Поиск</button>
+        </form>
 
-    <!-- Форма поиска -->
-    <form method="get" action="{% url 'service_list' %}" class="search-form">
-        <!-- Поле поиска по наименованию -->
-        <input type="text" name="q" placeholder="Поиск по наименованию..." value="{{ search_query }}" class="search-input">
-        
-        <!-- Поле поиска по цене -->
-        <input type="number" name="price" placeholder="Максимальная цена..." value="{{ price_query }}" class="search-input">
-        
-        <!-- Кнопка поиска -->
-        <button type="submit" class="search-button">Поиск</button>
-    </form>
+        <div class="request-info">
+            {% if request_id %}
+            <a href="{% url 'request_detail' request_id %}" class="current-request-button">
+                Текущая заявка ( Услуг: {{ request_services_count }})
+            </a>
+            {% else %}
+            <p>Request ID is not available.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </nav>
 
-    <div class="request-info">
-        {% if request_id %}
-        <a href="{% url 'request_detail' request_id %}" class="current-request-button">
-            Текущая заявка (ID: {{ request_id }} | Услуг: {{ request_services_count }})
-        </a>
-    {% else %}
-        <p>Request ID is not available.</p>  
-    {% endif %}
-    </div>
-</nav>
     <div class="space">
         <main>
             {% block content %}

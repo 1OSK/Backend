@@ -1,184 +1,275 @@
-/* static/styles.css */
 /* Общие стили */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap');
 
 * {
     font-family: "Roboto", sans-serif;
-  font-weight: 300;
-  font-style: normal;
-    color: #000000; 
+    font-weight: 300;
+    font-style: normal;
+    color: #000000;
+    box-sizing: border-box;
 }
 
 body {
     background: #ffffff;
 }
-.space{
+
+/* Основные стили */
+.space {
     width: 100%;
     margin: 0 auto;
-}
-.features li {
-    margin-bottom: 5px;
-    position: relative; /* Для позиционирования псевдоэлемента */
-    padding-left: 20px; /* Отступ слева для значка */
 }
 
-.features li::before {
-    content: '> '; /* Значок перед текстом */
-    position: absolute;
-    left: 0;
-    color: #000000; /* Цвет значка, можно изменить при необходимости */
-}
-/* Стили контейнеров */
-.container{
+/* Контейнеры */
+.container {
     display: grid;
-    grid-template-columns: repeat(2, 1fr); /* Две колонки */
-    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
     width: 100%;
-    max-width: 1200px; /* Ширина контейнера */
+    max-width: 1300px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 30px;
 }
+
 /* Стили карточек */
 .card {
-    display: block; /* Убедитесь, что карточка ведет себя как блок */
-    text-decoration: none; /* Убирает подчеркивание ссылок */
-    color: inherit; /* Наследует цвет текста от родителя */
-    border-radius: 20px;
-    background-color: #ffffff;
-    padding: 20px; /* Увеличение отступов внутри карточки */
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    position: relative; /* Для позиционирования кнопки */
-}
-
-/* Заголовок услуги */
-.title {
-    margin-bottom: 16px;
-    font-size: 20px;
-    font-weight: bold;
-}
-
-/* Список особенностей услуги */
-.features {
-    list-style-type: none;
-    margin-bottom: 20px;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.features li {
-    margin-bottom: 5px; /* Отступ между элементами списка */
-}
-
-/* Цена */
-.price {
-    font-size: 16px;
-    font-weight: 700;
-    margin-bottom: 15px; /* Отступ снизу */
-}
-
-/* Кнопка */
-.card-button {
-    padding: 10px 15px;
-    border-radius: 3px;
-    border: 1px solid #3faf4a; /* Зеленый цвет границы */
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    color: #3faf4a; /* Зеленый цвет шрифта */
-    background-color: #fff; /* Белый цвет фона по умолчанию */
-    transition: background-color 0.3s ease, color 0.3s ease; /* Плавный переход */
-    text-align: center; /* Выравнивание текста по центру */
-    display: inline-block; /* Для автоматического подгона ширины к содержимому */
+    color: inherit;
+    border-radius: 20px;
+    background-color: #ffffff;
+    padding: 30px;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    max-width: 800px;
+    margin: 0 auto;
+    height: 100%;
 }
 
-/* Стили для кнопки при наведении */
-.card:hover .card-button {
-    background-color: #3faf4a; /* Зеленый цвет фона при наведении */
-    color: #fff; /* Белый цвет шрифта при наведении */
-}
-
-/* Контейнер для кнопки */
-.button-container {
-    display: flex;
-    justify-content: flex-start; /* Выравнивание кнопки по левому краю */
-}
-
-/* Эффект при наведении на карточку */
 .card:hover {
     transform: translateY(-10px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
-
-
-/* Фоновый блок */
-.background-block {
-    background-color: #000000; /* Черный фон */
-    width: 100vw; /* Растягивается на всю ширину экрана */
-    margin-left: calc(-50vw + 50%); /* Центрирование блока по горизонтали */
-    margin-right: calc(-50vw + 50%); /* Центрирование блока по горизонтали */
-    box-sizing: border-box; /* Учитывает отступы и границы в ширину блока */
-    position: relative; /* Убедитесь, что блок занимает всю ширину */
-    overflow: hidden; /* Скрывает все, что выходит за пределы блока */
+/* Контейнер для цены и кнопки */
+.card-price-button-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 20px;
 }
 
-/* Контейнер для детальной информации */
+.price {
+    font-size: 18px;
+    font-weight: 500;
+    color: #333;
+    margin: 0;
+}
+
+.button-container {
+    display: flex;
+    justify-content: center;
+    width: auto;
+    margin: 0;
+}
+
+.card-button {
+    padding: 10px 15px;
+    border-radius: 3px;
+    border: 1px solid #3faf4a;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: #3faf4a;
+    background-color: #fff;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    text-align: center;
+    display: inline-block;
+}
+
+.card-button:hover {
+    background-color: #3faf4a;
+    color: #fff;
+}
+
+/* Контейнеры */
+.background-block {
+    background-color: #ffffff;
+    width: 100vw;
+    margin-left: calc(-50vw + 50%);
+    margin-right: calc(-50vw + 50%);
+    position: relative;
+    overflow: hidden;
+}
+
 .service-detail-container {
     display: flex;
-    align-items: stretch; /* Растягивает элементы по высоте контейнера */
-    gap: 20px; /* Отступ между текстом и изображением */
-    padding: 20px; /* Отступ внутри блока */
-    max-width: 1200px; /* Максимальная ширина контейнера */
-    margin: 0 auto; /* Центрирование контейнера */
-    width: 100%; /* Убедитесь, что контейнер также занимает всю ширину */
+    align-items: stretch;
+    gap: 20px;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
 }
 
-/* Стили для блока с текстом */
 .service-text {
-    flex: 1; /* Позволяет текстовому блоку занимать доступное пространство */
-    max-width: 50%; /* Максимальная ширина текстового блока */
-    color: #ffffff; /* Белый цвет текста для контраста на черном фоне */
+    flex: 1;
+    max-width: 50%;
+    color: #000000;
 }
 
-/* Стили для заголовка в блоке с текстом */
 .service-text h1 {
-    color: #ffffff; /* Белый цвет текста для заголовка */
+    color: #000000;
 }
 
-/* Стили для изображения */
 .service-image {
-    width: 50%; /* Изображение занимает 50% ширины контейнера */
-    height: auto; /* Высота автоматически подстраивается для сохранения пропорций */
-    border-radius: 10px; /* Закругленные углы для лучшего внешнего вида */
-    display: block; /* Убирает нижний отступ у изображения */
+    max-width: 100%;
+    height: auto;
+    max-height: 600px;
+    border-radius: 10px;
+    display: block;
+    margin: 0 auto 20px auto;
 }
 
-/* Список деталей */
+/* Стили для изображения на странице детали услуги */
+.service-detail-image {
+    width: 100%;
+    max-width: 500px;
+    height: auto;
+    border-radius: 10px;
+    display: block;
+    margin: 0 auto;
+}
+
 .service-details {
     list-style-type: none;
     padding: 0;
-    margin-bottom: 20px; /* Отступ снизу */
+    margin-bottom: 20px;
 }
 
 .service-details li {
-    margin-bottom: 10px; /* Отступ между элементами списка */
+    margin-bottom: 10px;
     position: relative;
-    padding-left: 20px; /* Отступ слева для значка */
-    color: #ffffff; /* Белый цвет текста для контраста на черном фоне */
+    padding-left: 20px;
+    color: #000000;
 }
 
 .service-details li::before {
-    content: '> '; /* Значок перед текстом */
+    content: '> ';
     position: absolute;
     left: 0;
-    color: #ffffff; /* Цвет значка */
+    color: #000000;
 }
 
-/* Стили для хлебных крошек */
+/* Заголовки */
+.title, .page-title {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    color: #333;
+}
+
+.page-title {
+    font-size: 24px;
+    text-align: center;
+}
+
+.search-form-container {
+    display: flex;
+    justify-content: flex-end;
+    padding: 20px;
+}
+
+.search-form-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 800px;
+}
+
+.search-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.search-input {
+    padding: 10px;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    font-size: 16px;
+    max-width: 200px;
+}
+
+.search-button {
+    padding: 10px 15px;
+    border-radius: 4px;
+    border: 1px solid #ffffff;
+    background-color: #000000;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.search-button:hover {
+    background-color: #85888c;
+    color: #000000;
+}
+
+/* Навигационная панель */
+.navigation-bar {
+    width: 100%;
+    background-color: #000000;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #ddd;
+}
+
+.navigation-bar .search-form {
+    margin-left: auto;
+}
+
+.header {
+    background-color: #ffffff;
+    padding: 10px 20px;
+    color: #fff;
+    text-align: left;
+    margin-bottom: 0;
+}
+
+header nav a {
+    color: #000000;
+    text-decoration: none;
+    margin: 0 15px;
+    font-size: 50px;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+header nav a:hover {
+    color: #85888c;
+}
+
+/* Контактная информация */
+.contact-info {
+    text-align: right;
+}
+
+.city {
+    font-size: 14px;
+    margin: 0;
+    text-transform: lowercase;
+}
+
+/* Хлебные крошки */
 .breadcrumbs {
     margin-bottom: 20px;
     font-size: 14px;
@@ -198,189 +289,7 @@ body {
     margin-right: 10px;
 }
 
-
-
-/* Стили для шапки сайта */
-.header {
-    background-color: #ffffff;
-    padding: 10px 20px;
-    color: #fff;
-    text-align: left;
-    margin-bottom: 0px;
-}
-
-header nav a {
-    color: #000000;
-    text-decoration: none;
-    margin: 0 15px;
-    font-size: 50px;
-    font-weight: 600;
-    transition: color 0.3s ease;
-}
-
-header nav a:hover {
-    color:  #85888c;
-}
-/* Стили для блока контактной информации */
-.contact-info {
-    text-align: right; /* Выравнивание текста по правому краю */
-}
-.city {
-    font-size: 14px; /* Маленький размер для города */
-    margin: 0;
-    text-transform: lowercase; /* Преобразуем текст в нижний регистр */
-}
-
-/* Стили для номера телефона */
-.phone-number {
-    font-size: 18px; /* Крупный размер для номера телефона */
-    margin: 0;
-    font-weight: bold; /* Жирный шрифт */
-}
-
-/* Стили для заголовков */
-.page-title {
-    font-size: 24px;
-    margin-bottom: 20px;
-    text-align: center;
-    color: #333;
-}
-.search-form {
-    display: flex; /* Используем Flexbox для размещения элементов в строку */
-    gap: 10px; /* Задаем промежуток между элементами */
-    margin-bottom: 20px; /* Отступ снизу формы */
-}
-
-.search-input {
-    padding: 10px; /* Внутренний отступ */
-    border: 1px solid #ccc; /* Граница */
-    border-radius: 4px; /* Скругление углов */
-    font-size: 16px; /* Размер шрифта */
-    flex: 1; /* Элементы равной ширины */
-    max-width: 200px; /* Максимальная ширина поля */
-}
-
-.search-button {
-    padding: 8px 10px; 
-    border-radius: 10px;
-    border: 1px solid #000000;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.search-button:hover {
-    background-color: #85888c;
-}
-
-/* Стили для request-card */
-.request-card {
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 20px;
-    margin-top: 30px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    text-align: center;
-}
-
-/* Стили для заголовка и текста в request-card */
-.request-title {
-    font-size: 20px;
-    margin-bottom: 15px;
-    color: #333;
-}
-
-.request-count {
-    font-size: 16px;
-    margin-bottom: 10px;
-    color: #666;
-}
-
-/* Стили для кнопки в request-card */
-.request-button {
-    padding: 8px 10px; 
-    border-radius: 10px;
-    border: 1px solid #000000;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.request-button:hover {
-    background-color:  #85888c;
-}
-
-/* Стили для навигационного блока */
-.navigation-bar {
-    width: 100%;  /* На всю ширину экрана */
-    background-color: #000000;  /* Черный фон для навигации */
-    padding: 10px 20px;  /* Отступы для внутреннего содержания */
-    display: flex;  /* Flexbox для выравнивания элементов */
-    align-items: center;  /* Центрирование элементов по вертикали */
-    justify-content: space-between;  /* Пространство между элементами */
-    border-bottom: 1px solid #ddd;  /* Нижняя граница */
-    box-sizing: border-box;  /* Учитываем отступы в ширину блока */
-}
-
-/* Стили для ссылок навигации */
-.nav-links {
-    list-style: none;  /* Убираем маркеры */
-    display: flex;  /* Горизонтальное отображение */
-    margin: 0;  /* Убираем отступы */
-    padding: 0;  /* Убираем отступы */
-}
-
-.nav-links li {
-    margin-right: 20px;  /* Отступ между ссылками */
-}
-
-.nav-links a {
-    text-decoration: none;  /* Убираем подчеркивание */
-    color: #fffdfd;  /* Цвет текста */
-    font-size: 16px;  /* Размер шрифта */
-    font-weight: 500;  /* Полужирный шрифт */
-    transition: color 0.3s ease;  /* Плавный переход цвета при наведении */
-}
-
-.nav-links a:hover {
-    color: #85888c;  /* Цвет при наведении */
-}
-
-/* Стили для формы поиска в навигации */
-.search-form {
-    display: flex;  /* Горизонтальное отображение */
-    align-items: center;  /* Выравнивание по центру вертикально */
-    margin: 0;  /* Убираем отступы */
-    margin-left: auto;  /* Смещение вправо */
-}
-
-.search-input {
-    padding: 5px;  /* Уменьшенные отступы */
-    width: 150px;  /* Ширина input */
-    border: 1px solid #ddd;
-    border-radius: 3px;  /* Радиус углов */
-    margin-right: 5px;  /* Отступ справа */
-}
-
-.search-button {
-    padding: 5px 8px;  /* Уменьшенные отступы */
-    border-radius: 5px;
-    border: 1px solid #000000;
-    background-color: #fff;  /* Цвет фона */
-    color: #000;  /* Цвет текста */
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-}
-
-.search-button:hover {
-    background-color: #85888c;
-    color: #fff;
-}
-
-
+/* Кнопка текущего запроса */
 .current-request-button {
     padding: 5px 8px;
     border-radius: 5px;
@@ -392,10 +301,94 @@ header nav a:hover {
     font-weight: 500;
     display: flex;
     align-items: center;
-    margin-left: 20px; /* Отступ слева */
+    margin-left: 20px;
 }
 
 .current-request-button:hover {
-    background-color: #85888c; /* Цвет фона при наведении */
+    background-color: #85888c;
     color: #fff;
+}
+
+/* Request Card */
+.request-card {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 20px;
+    margin-top: 30px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.request-title {
+    font-size: 20px;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.request-count {
+    font-size: 16px;
+    color: #666;
+}
+
+.request-button {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #000000;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.request-button:hover {
+    background-color: #85888c;
+}
+
+/* Контейнер для деталей заявки и списка услуг */
+.request-details-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Детали заявки */
+.request-summary {
+    background-color: #ffffff;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.request-title, .request-count {
+    margin-bottom: 15px;
+}
+
+.request-title {
+    font-size: 20px;
+    color: #333;
+}
+
+.request-count {
+    font-size: 16px;
+    color: #666;
+}
+
+/* Стили для контейнера списка услуг */
+.service-list-container {
+    margin-top: 20px;
+}
+
+/* Основной контейнер для списка услуг */
+.service-list1 {
+    display: flex;
+    flex-direction: column; /* Отображение карточек в один столбец */
+    gap: 20px; /* Расстояние между карточками */
 }
