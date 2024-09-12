@@ -49,21 +49,18 @@ services = [
 
 
 requests = [
-    {
-      'id': 1,
-        'date': datetime(2024, 9, 12, 12, 12, 30),  # Добавляем секунды
-        'address': 'Москва, ул. Мироновская, 25',
-        'services': [1, 2] 
-    },
-    
+    {'id': 1, 'date': datetime(2024, 9, 12, 12, 12, 30), 'address': 'Москва, ул. Мироновская, 25'},
+    # другие заявки
 ]
-
-def service_list(request):
     
-    # Извлекаем запросы из GET-параметров
+# Привязка ID заявки к услугам
+request_services_map = {
+    1: [1, 2, 3],
+    # другие привязки
+}
+def service_list(request):
     price_query = request.GET.get('price', '')  # Запрос по максимальной цене
 
-    # Фильтруем услуги по цене
     filtered_services = services
     if price_query:
         try:
@@ -72,50 +69,43 @@ def service_list(request):
         except ValueError:
             pass
 
-    # Извлекаем информацию о заявке
     request_id = 1  # Пример ID заявки
-    user_request = next((r for r in requests if r['id'] == request_id), None)
-    request_services_count = len(user_request['services']) if user_request else 0
+    request_services_count = len(request_services_map.get(request_id, []))
 
-    # Возвращаем отфильтрованные услуги и информацию о заявке
     return render(request, 'services/service_list.html', {
         'services': filtered_services,
         'request_id': request_id,
         'request_services_count': request_services_count,
         'price_query': price_query,
     })
+
     
 def service_detail(request, service_id):
-    """
-    Представление для отображения деталей одной услуги.
-    """
-    # Извлекаем услугу по ID
     service = next((s for s in services if s['id'] == service_id), None)
     
     if not service:
         return get_object_or_404(service)
-    
-    # Преобразование строки характеристик в список
+
     characteristics_list = service['characteristics'].split(',') if service.get('characteristics') else []
 
-    # Возвращаем данные для рендеринга шаблона детали услуги
     return render(request, 'services/service_detail.html', {
         'service': service,
-        'characteristics_list': characteristics_list,  # Передаем список характеристик в шаблон
+        'characteristics_list': characteristics_list,
     })
 
 def request_detail(request, request_id):
-    """
-    Представление для отображения деталей одной заявки.
-    """
-    # Извлекаем заявку по ID
     user_request = next((r for r in requests if r['id'] == request_id), None)
     
     if user_request:
-        # Извлекаем услуги, связанные с этой заявкой
-        request_services = [s for s in services if s['id'] in user_request['services']]
+        request_service_ids = request_services_map.get(request_id, [])
+        request_services = [s for s in services if s['id'] in request_service_ids]
+        request_services_count = len(request_services)
     else:
         request_services = []
-        
-    # Возвращаем данные для рендеринга шаблона деталей заявки
-    return render(request, 'services/request_detail.html', {'request': user_request, 'services': request_services})
+        request_services_count = 0
+
+    return render(request, 'services/request_detail.html', {
+        'request': user_request,
+        'services': request_services,
+        'request_services_count': request_services_count
+    })

@@ -8,7 +8,7 @@
                 <h2 class="request-title">Детали заявки #{{ request.id }}</h2> <!-- Здесь указан ID заявки -->
                 <p class="request-date"><strong>Дата заявки:</strong> {{ request.date|date:"Y-m-d H:i:s" }}</p>
                 <p class="request-address"><strong>Адрес:</strong> {{ request.address }}</p>
-                <p class="request-count"><strong>Количество услуг:</strong> {{ request.services|length }}</p>
+                <p class="request-count"><strong>Количество услуг:</strong> {{ request_services_count }}</p>
             </div>
         </div>
 
