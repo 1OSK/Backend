@@ -4,30 +4,30 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{% block title %}Data center{% endblock %}</title>
+    <title>{% block title %}Data Center{% endblock %}</title>
     {% load static %}
     <link rel="stylesheet" href="{% static 'styles.css' %}" />
 </head>
 <body>
     <header class="main-header">
         <nav class="main-nav">
-            <a href="{% url 'service_list' %}" class="header-title">Data Center</a>
+            <a href="{% url 'equipment_list' %}" class="header-title">Data Center</a>
         </nav>
     </header>
 
     <!-- Навигационный блок -->
     <nav class="navigation-bar">
-        <!-- Форма поиска по цене и кнопка текущей заявки только на странице списка услуг -->
+        <!-- Форма поиска по цене и кнопка текущей заявки только на странице списка оборудования -->
         {% if request.path == '/' %}
-        <form method="get" action="{% url 'service_list' %}" class="search-form">
-            <input type="number" name="price" placeholder="Максимальная цена..." value="{{ price_query }}" class="search-input">
+        <form method="get" action="{% url 'equipment_list' %}" class="search-form">
+            <input type="number" name="price" placeholder="Максимальная цена..." value="{{ max_price_query }}" class="search-input">
             <button type="submit" class="search-button">Поиск</button>
         </form>
 
         <div class="request-info">
             {% if request_id %}
-            <a href="{% url 'request_detail' request_id %}" class="current-request-button">
-                Текущая заявка ( Услуг: {{ request_services_count }})
+            <a href="{% url 'request_detail_view' request_id %}" class="current-request-button">
+                Текущая заявка (Оборудования: {{ equipment_count_in_request }})
             </a>
             {% else %}
             <p>Request ID is not available.</p>

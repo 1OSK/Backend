@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    {% for equipment in equipment_list %}
+    <a href="{% url 'equipment_detail_view' equipment.id %}" class="card">
+        <p class="title">{{ equipment.name }}</p>
+        <div class="image-container">
+            <img src="{{ equipment.image }}" alt="{{ equipment.name }}" class="service-image">
+        </div>
+        <div class="card-price-button-container">
+            {% if equipment.price %}
+            <p class="price">{{ equipment.price }} руб.</p>
+            {% endif %}
+            <div class="button-container">
+                <span class="card-button">Подробнее о комплектующем</span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -30,7 +30,6 @@ body {
     padding: 30px;
 }
 
-/* Стили карточек */
 .card {
     display: flex;
     flex-direction: column;
@@ -45,21 +44,22 @@ body {
     position: relative;
     max-width: 800px;
     margin: 0 auto;
-    height: 100%;
+    /* Удалите высоту и overflow, чтобы карточка могла изменять размер */
+    height: auto;
+    overflow: visible;
 }
 
 .card:hover {
     transform: translateY(-10px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
-
-/* Контейнер для цены и кнопки */
 .card-price-button-container {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-top: auto;
     padding-top: 20px;
+    gap: 10px; /* Минимальное расстояние между элементами */
 }
 
 .price {
@@ -67,6 +67,7 @@ body {
     font-weight: 500;
     color: #333;
     margin: 0;
+    white-space: nowrap; /* Предотвращает перенос текста */
 }
 
 .button-container {
@@ -88,6 +89,10 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
     text-align: center;
     display: inline-block;
+    white-space: nowrap; /* Предотвращает перенос текста */
+    overflow: hidden; /* Обрезает текст, если он слишком длинный */
+    text-overflow: ellipsis; /* Добавляет троеточие, если текст обрезан */
+    max-width: 100%; /* Задайте максимальную ширину, если требуется */
 }
 
 .card-button:hover {
@@ -125,15 +130,22 @@ body {
     color: #000000;
 }
 
-.service-image {
-    max-width: 100%;
-    height: auto;
-    max-height: 600px;
-    border-radius: 10px;
-    display: block;
-    margin: 0 auto 20px auto;
+/* Контейнер для изображения */
+.image-container {
+    width: 100%;
+    height: 200px; /* Фиксированная высота для изображения */
+    overflow: hidden; /* Скрывает часть изображения, выходящую за пределы контейнера */
+    margin-bottom: 20px;
 }
 
+/* Изображение внутри контейнера */
+.service-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Изображение сохраняет соотношение сторон и заполняет контейнер */
+    border-radius: 10px;
+    display: block;
+}
 /* Стили для изображения на странице детали услуги */
 .service-detail-image {
     width: 100%;

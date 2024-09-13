@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from datetime import datetime
 # Пример данных
-services = [
+equipment_list = [
     {
         'id': 1,
         'name': 'Коммутатор BROCADE G610',
@@ -48,64 +48,65 @@ services = [
 
 
 
-requests = [
+equipment_requests = [
     {'id': 1, 'date': datetime(2024, 9, 12, 12, 12, 30), 'address': 'Москва, ул. Мироновская, 25'},
+    
     # другие заявки
 ]
     
 # Привязка ID заявки к услугам
-request_services_map = {
+request_to_equipment_map = {
     1: [1, 2, 3],
     # другие привязки
 }
-def service_list(request):
-    price_query = request.GET.get('price', '')  # Запрос по максимальной цене
 
-    filtered_services = services
-    if price_query:
+def equipment_list_view(request):
+    max_price_query = request.GET.get('price', '')  # Запрос по максимальной цене
+
+    filtered_equipment = equipment_list
+    if max_price_query:
         try:
-            price_value = int(price_query)
-            filtered_services = [s for s in filtered_services if s['price'] <= price_value]
+            max_price_value = int(max_price_query)
+            filtered_equipment = [eq for eq in filtered_equipment if eq['price'] <= max_price_value]
         except ValueError:
             pass
 
     request_id = 1  # Пример ID заявки
-    request_services_count = len(request_services_map.get(request_id, []))
+    equipment_count_in_request = len(request_to_equipment_map.get(request_id, []))
 
-    return render(request, 'services/service_list.html', {
-        'services': filtered_services,
+    return render(request, 'services/equipment_list.html', {
+        'equipment_list': filtered_equipment,
         'request_id': request_id,
-        'request_services_count': request_services_count,
-        'price_query': price_query,
+        'equipment_count_in_request': equipment_count_in_request,
+        'max_price_query': max_price_query,
     })
 
-    
-def service_detail(request, service_id):
-    service = next((s for s in services if s['id'] == service_id), None)
-    
-    if not service:
-        return get_object_or_404(service)
+def equipment_detail_view(request, equipment_id):
+    equipment = next((eq for eq in equipment_list if eq['id'] == equipment_id), None)
 
-    characteristics_list = service['characteristics'].split(',') if service.get('characteristics') else []
+    if not equipment:
+        return get_object_or_404(equipment)
 
-    return render(request, 'services/service_detail.html', {
-        'service': service,
+    characteristics_list = equipment['characteristics'].split(',') if equipment.get('characteristics') else []
+
+    return render(request, 'services/equipment_detail_view.html', {
+        'equipment': equipment,
         'characteristics_list': characteristics_list,
     })
 
-def request_detail(request, request_id):
-    user_request = next((r for r in requests if r['id'] == request_id), None)
-    
-    if user_request:
-        request_service_ids = request_services_map.get(request_id, [])
-        request_services = [s for s in services if s['id'] in request_service_ids]
-        request_services_count = len(request_services)
-    else:
-        request_services = []
-        request_services_count = 0
+def request_detail_view(request, request_id):
+    selected_request = next((req for req in equipment_requests if req['id'] == request_id), None)
 
-    return render(request, 'services/request_detail.html', {
-        'request': user_request,
-        'services': request_services,
-        'request_services_count': request_services_count
+    if selected_request:
+        equipment_ids_in_request = request_to_equipment_map.get(request_id, [])
+        equipment_in_request = [eq for eq in equipment_list if eq['id'] in equipment_ids_in_request]
+        equipment_count_in_request = len(equipment_in_request)
+    else:
+        equipment_in_request = []
+        equipment_count_in_request = 0
+
+    return render(request, 'services/request_detail_view.html', {
+        'request': selected_request,
+        'equipment_in_request': equipment_in_request,
+        'equipment_count_in_request': equipment_count_in_request
     })
