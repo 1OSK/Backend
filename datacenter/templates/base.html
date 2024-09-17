@@ -24,13 +24,13 @@
             <button type="submit" class="search-button">Поиск</button>
         </form>
 
-        <div class="request-info">
-            {% if request_id %}
-            <a href="{% url 'request_detail_view' request_id %}" class="current-request-button">
-                Текущий заказ (Оборудование: {{ equipment_count_in_request }})
+        <div class="order-info">
+            {% if current_order_id %}
+            <a href="{% url 'order_detail_view' current_order_id %}" class="current-order-button">
+                Текущий заказ (Оборудование: {{ equipment_count_in_order }})
             </a>
             {% else %}
-            <p>Request ID is not available.</p>
+            <p>Current Order ID is not available.</p>
             {% endif %}
         </div>
         {% endif %}

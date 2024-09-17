@@ -48,7 +48,7 @@ equipment_list = [
 
 
 
-equipment_requests = [
+equipment_orders = [
     {'id': 1,
      'date': datetime(2024, 9, 12, 12, 12, 30),
      'address': 'Москва, ул. Мироновская, 25'
@@ -57,14 +57,13 @@ equipment_requests = [
     # другие заявки
 ]
     
-# Пример данных по заявкам с услугами и количеством
-request_items = [
-    {'request_id': 1, 'equipment_id': 1, 'quantity': 2},  # Заявка 1, Услуга 1, Кол-во 2
-    {'request_id': 1, 'equipment_id': 2, 'quantity': 1},  # Заявка 1, Услуга 2, Кол-во 1
-    {'request_id': 1, 'equipment_id': 3, 'quantity': 5},  # Заявка 1, Услуга 3, Кол-во 5
+# Пример данных по заказам с оборудованием и количеством
+order_items = [
+    {'order_id': 1, 'equipment_id': 1, 'quantity': 3},  # Заказ 1, Оборудование 1, Кол-во 3
+    {'order_id': 1, 'equipment_id': 2, 'quantity': 1},  # Заказ 1, Оборудование 2, Кол-во 1
+    {'order_id': 1, 'equipment_id': 3, 'quantity': 5},  # Заказ 1, Оборудование 3, Кол-во 5
     # другие строки
 ]
-
 
 def equipment_list_view(request):
     max_price_query = request.GET.get('price', '')  # Запрос по максимальной цене
@@ -77,18 +76,18 @@ def equipment_list_view(request):
         except ValueError:
             pass
 
-    request_id = 1  # Пример ID заявки
+    current_order_id = 1  # Пример ID текущего заказа
 
-    # Фильтруем все записи, относящиеся к текущей заявке
-    items_in_request = [item for item in request_items if item['request_id'] == request_id]
+    # Фильтруем все записи, относящиеся к текущему заказу
+    items_in_order = [item for item in order_items if item['order_id'] == current_order_id]
     
     # Подсчитываем общее количество всех предметов (включая дубликаты)
-    total_quantity = sum(item['quantity'] for item in items_in_request)
+    total_quantity = sum(item['quantity'] for item in items_in_order)
 
     return render(request, 'services/equipment_list.html', {
         'equipment_list': filtered_equipment,
-        'request_id': request_id,
-        'equipment_count_in_request': total_quantity,  # Общее количество всех предметов
+        'current_order_id': current_order_id,
+        'equipment_count_in_order': total_quantity,
         'max_price_query': max_price_query,
     })
 
@@ -105,32 +104,32 @@ def equipment_detail_view(request, equipment_id):
         'characteristics_list': characteristics_list,
     })
     
-def request_detail_view(request, request_id):
-    # Получаем заявку по её ID
-    selected_request = next((req for req in equipment_requests if req['id'] == request_id), None)
+def order_detail_view(request, order_id):
+    # Получаем заказ по его ID
+    selected_order = next((order for order in equipment_orders if order['id'] == order_id), None)
 
-    if selected_request:
-        # Фильтруем все записи, относящиеся к текущей заявке
-        items_in_request = [item for item in request_items if item['request_id'] == request_id]
+    if selected_order:
+        # Фильтруем все записи, относящиеся к текущему заказу
+        items_in_order = [item for item in order_items if item['order_id'] == order_id]
         
-        # Объединяем данные об оборудовании с количеством и вычисляем общую стоимость
-        equipment_in_request = [
+        # Объединяем данные об оборудовании с количеством
+        equipment_in_order = [
             {
                 'equipment': next(eq for eq in equipment_list if eq['id'] == item['equipment_id']),
                 'quantity': item['quantity'],
                 'total_price': next(eq for eq in equipment_list if eq['id'] == item['equipment_id'])['price'] * item['quantity']
             }
-            for item in items_in_request
+            for item in items_in_order
         ]
         
         # Подсчитываем общее количество всех предметов (включая дубликаты)
-        equipment_count_in_request = sum(item['quantity'] for item in items_in_request)
+        equipment_count_in_order = sum(item['quantity'] for item in items_in_order)
     else:
-        equipment_in_request = []
-        equipment_count_in_request = 0
+        equipment_in_order = []
+        equipment_count_in_order = 0
 
-    return render(request, 'services/request_detail_view.html', {
-        'request': selected_request,
-        'equipment_in_request': equipment_in_request,
-        'equipment_count_in_request': equipment_count_in_request  # Общее количество всех предметов
+    return render(request, 'services/order_detail_view.html', {
+        'order': selected_order,
+        'equipment_in_order': equipment_in_order,
+        'equipment_count_in_order': equipment_count_in_order
     })

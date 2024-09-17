@@ -302,7 +302,7 @@ header nav a:hover {
 }
 
 /* Кнопка текущего запроса */
-.current-request-button {
+.current-order-button {
     padding: 5px 8px;
     border-radius: 5px;
     border: 1px solid #000000;
@@ -316,13 +316,13 @@ header nav a:hover {
     margin-left: 20px;
 }
 
-.current-request-button:hover {
+.current-order-button:hover {
     background-color: #85888c;
     color: #fff;
 }
 
 /* Request Card */
-.request-card {
+.order-card {
     background-color: #f9f9f9;
     border: 1px solid #ddd;
     border-radius: 10px;
@@ -335,18 +335,18 @@ header nav a:hover {
     margin: 0 auto;
 }
 
-.request-title {
+.order-title {
     font-size: 20px;
     color: #333;
     margin-bottom: 10px;
 }
 
-.request-count {
+.order-count {
     font-size: 16px;
     color: #666;
 }
 
-.request-button {
+.order-button {
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid #000000;
@@ -355,12 +355,12 @@ header nav a:hover {
     font-weight: 500;
 }
 
-.request-button:hover {
+.order-button:hover {
     background-color: #85888c;
 }
 
 /* Контейнер для деталей заявки и списка услуг */
-.request-details-container {
+.order-details-container {
     display: flex;
     flex-direction: column;
     gap: 30px;
@@ -371,7 +371,7 @@ header nav a:hover {
 }
 
 /* Детали заявки */
-.request-summary {
+.order-summary {
     background-color: #ffffff;
     border: 1px solid #ddd;
     border-radius: 10px;
@@ -379,16 +379,16 @@ header nav a:hover {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.request-title, .request-count {
+.order-title, .order-count {
     margin-bottom: 15px;
 }
 
-.request-title {
+.order-title {
     font-size: 20px;
     color: #333;
 }
 
-.request-count {
+.order-count {
     font-size: 16px;
     color: #666;
 }
@@ -399,7 +399,7 @@ header nav a:hover {
 }
 
 /* Основной контейнер для списка услуг */
-.service-list1 {
+.equipment-list {
     display: flex;
     flex-direction: column; /* Отображение карточек в один столбец */
     gap: 20px; /* Расстояние между карточками */
@@ -416,7 +416,7 @@ header nav a:hover {
 .item-details strong {
     font-weight: bold;
 }
-.service-item {
+.equipment-item {
     display: flex;
     align-items: center; /* Vertically center items */
     justify-content: space-between;
