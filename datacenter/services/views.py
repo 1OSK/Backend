@@ -49,16 +49,22 @@ equipment_list = [
 
 
 equipment_requests = [
-    {'id': 1, 'date': datetime(2024, 9, 12, 12, 12, 30), 'address': 'Москва, ул. Мироновская, 25'},
+    {'id': 1,
+     'date': datetime(2024, 9, 12, 12, 12, 30),
+     'address': 'Москва, ул. Мироновская, 25'
+     },
     
     # другие заявки
 ]
     
-# Привязка ID заявки к услугам
-request_to_equipment_map = {
-    1: [1, 2, 3],
-    # другие привязки
-}
+# Пример данных по заявкам с услугами и количеством
+request_items = [
+    {'request_id': 1, 'equipment_id': 1, 'quantity': 2},  # Заявка 1, Услуга 1, Кол-во 2
+    {'request_id': 1, 'equipment_id': 2, 'quantity': 1},  # Заявка 1, Услуга 2, Кол-во 1
+    {'request_id': 1, 'equipment_id': 3, 'quantity': 5},  # Заявка 1, Услуга 3, Кол-во 5
+    # другие строки
+]
+
 
 def equipment_list_view(request):
     max_price_query = request.GET.get('price', '')  # Запрос по максимальной цене
@@ -72,12 +78,17 @@ def equipment_list_view(request):
             pass
 
     request_id = 1  # Пример ID заявки
-    equipment_count_in_request = len(request_to_equipment_map.get(request_id, []))
+
+    # Фильтруем все записи, относящиеся к текущей заявке
+    items_in_request = [item for item in request_items if item['request_id'] == request_id]
+    
+    # Подсчитываем общее количество всех предметов (включая дубликаты)
+    total_quantity = sum(item['quantity'] for item in items_in_request)
 
     return render(request, 'services/equipment_list.html', {
         'equipment_list': filtered_equipment,
         'request_id': request_id,
-        'equipment_count_in_request': equipment_count_in_request,
+        'equipment_count_in_request': total_quantity,  # Общее количество всех предметов
         'max_price_query': max_price_query,
     })
 
@@ -93,14 +104,27 @@ def equipment_detail_view(request, equipment_id):
         'equipment': equipment,
         'characteristics_list': characteristics_list,
     })
-
+    
 def request_detail_view(request, request_id):
+    # Получаем заявку по её ID
     selected_request = next((req for req in equipment_requests if req['id'] == request_id), None)
 
     if selected_request:
-        equipment_ids_in_request = request_to_equipment_map.get(request_id, [])
-        equipment_in_request = [eq for eq in equipment_list if eq['id'] in equipment_ids_in_request]
-        equipment_count_in_request = len(equipment_in_request)
+        # Фильтруем все записи, относящиеся к текущей заявке
+        items_in_request = [item for item in request_items if item['request_id'] == request_id]
+        
+        # Объединяем данные об оборудовании с количеством и вычисляем общую стоимость
+        equipment_in_request = [
+            {
+                'equipment': next(eq for eq in equipment_list if eq['id'] == item['equipment_id']),
+                'quantity': item['quantity'],
+                'total_price': next(eq for eq in equipment_list if eq['id'] == item['equipment_id'])['price'] * item['quantity']
+            }
+            for item in items_in_request
+        ]
+        
+        # Подсчитываем общее количество всех предметов (включая дубликаты)
+        equipment_count_in_request = sum(item['quantity'] for item in items_in_request)
     else:
         equipment_in_request = []
         equipment_count_in_request = 0
@@ -108,5 +132,5 @@ def request_detail_view(request, request_id):
     return render(request, 'services/request_detail_view.html', {
         'request': selected_request,
         'equipment_in_request': equipment_in_request,
-        'equipment_count_in_request': equipment_count_in_request
+        'equipment_count_in_request': equipment_count_in_request  # Общее количество всех предметов
     })

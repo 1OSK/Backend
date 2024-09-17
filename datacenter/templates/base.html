@@ -27,7 +27,7 @@
         <div class="request-info">
             {% if request_id %}
             <a href="{% url 'request_detail_view' request_id %}" class="current-request-button">
-                Текущая заявка (Оборудования: {{ equipment_count_in_request }})
+                Текущий заказ (Оборудование: {{ equipment_count_in_request }})
             </a>
             {% else %}
             <p>Request ID is not available.</p>

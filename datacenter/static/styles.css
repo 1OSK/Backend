@@ -404,3 +404,34 @@ header nav a:hover {
     flex-direction: column; /* Отображение карточек в один столбец */
     gap: 20px; /* Расстояние между карточками */
 }
+
+
+
+.quantity,
+.total-price {
+    margin: 5px 0;
+    font-size: 18px;
+}
+
+.item-details strong {
+    font-weight: bold;
+}
+.service-item {
+    display: flex;
+    align-items: center; /* Vertically center items */
+    justify-content: space-between;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    background-color: #fff;
+}
+
+.card1 {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+    max-width: 400px; /* Adjust as needed */
+}
