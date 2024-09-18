@@ -11,7 +11,7 @@
 <body>
     <header class="main-header">
         <nav class="main-nav">
-            <a href="{% url 'equipment_list' %}" class="header-title">Data Center</a>
+            <a href="{% url 'equipment_list_datacenter' %}" class="header-title">Data Center</a>
         </nav>
     </header>
 
@@ -19,15 +19,15 @@
     <nav class="navigation-bar">
         <!-- Форма поиска по цене и кнопка текущей заявки только на странице списка оборудования -->
         {% if request.path == '/' %}
-        <form method="get" action="{% url 'equipment_list' %}" class="search-form">
-            <input type="number" name="price" placeholder="Максимальная цена..." value="{{ max_price_query }}" class="search-input">
+        <form method="get" action="{% url 'equipment_list_datacenter' %}" class="search-form">
+            <input type="number" name="price_datacenter" placeholder="Максимальная цена..." value="{{ max_price_query }}" class="search-input">
             <button type="submit" class="search-button">Поиск</button>
         </form>
 
         <div class="order-info">
-            {% if current_order_id %}
-            <a href="{% url 'order_detail_view' current_order_id %}" class="current-order-button">
-                Текущий заказ (Оборудование: {{ equipment_count_in_order }})
+            {% if current_order_id_datacenter %}
+            <a href="{% url 'order_detail_view_datacenter' current_order_id_datacenter %}" class="current-order-button">
+                Текущий заказ (Оборудование: {{ equipment_count_in_order_datacenter }})
             </a>
             {% else %}
             <p>Current Order ID is not available.</p>

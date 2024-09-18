@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('services.urls')),  # Включение URL из приложения 'services'
+    path('', include('datacenter_app.urls')),  # Включение URL из приложения 'services'
 ]
 
 # Обработка статических и медийных файлов в режиме отладки

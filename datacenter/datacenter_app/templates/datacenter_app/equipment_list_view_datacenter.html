@@ -2,8 +2,8 @@
 
 {% block content %}
 <div class="container">
-    {% for equipment in equipment_list %}
-    <a href="{% url 'equipment_detail_view' equipment.id %}" class="card">
+    {% for equipment in equipment_list_datacenter %}
+    <a href="{% url 'equipment_detail_view_datacenter' equipment.id %}" class="card">
         <p class="title">{{ equipment.name }}</p>
         <div class="image-container">
             <img src="{{ equipment.image }}" alt="{{ equipment.name }}" class="service-image">

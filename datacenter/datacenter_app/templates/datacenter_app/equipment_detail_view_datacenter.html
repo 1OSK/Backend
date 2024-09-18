@@ -4,27 +4,27 @@
 <div class="background-block">
     <div class="service-detail-container">
         <div class="service-text">
-            <h1>{{ equipment.name }}</h1>
+            <h1>{{ equipment_datacenter.name }}</h1>
             <ul class="service-details">
-                {% if characteristics_list %}
-                    {% for item in characteristics_list %}
+                {% if characteristics_list_datacenter %}
+                    {% for item in characteristics_list_datacenter %}
                         <li>{{ item }}</li>
                     {% endfor %}
                 {% else %}
                     <li>Информация о деталях не доступна.</li>
                 {% endif %}
             </ul>
-            <p class="price"><strong>Цена:</strong> {{ equipment.price }} руб.</p>
+            <p class="price"><strong>Цена:</strong> {{ equipment_datacenter.price }} руб.</p>
         </div>
-        {% if equipment.image %}
-            <img src="{{ equipment.image }}" alt="{{ equipment.name }}" class="service-detail-image">
+        {% if equipment_datacenter.image %}
+            <img src="{{ equipment_datacenter.image }}" alt="{{ equipment_datacenter.name }}" class="service-detail-image">
         {% endif %}
     </div>
 </div>
 
-{% if detail and detail.additional_text %}
+{% if equipment_datacenter.additional_text %}
 <div class="additional-text">
-    <p>{{ detail.additional_text }}</p>
+    <p>{{ equipment_datacenter.additional_text }}</p>
 </div>
 {% endif %}
 {% endblock %}
