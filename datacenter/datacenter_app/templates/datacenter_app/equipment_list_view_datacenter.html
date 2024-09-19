@@ -6,7 +6,7 @@
     <a href="{% url 'equipment_detail_view_datacenter' equipment.id %}" class="card">
         <p class="title">{{ equipment.name }}</p>
         <div class="image-container">
-            <img src="{{ equipment.image }}" alt="{{ equipment.name }}" class="service-image">
+            <img src="{{ equipment.image_url }}" alt="{{ equipment.name }}" class="service-image">
         </div>
         <div class="card-price-button-container">
             {% if equipment.price %}

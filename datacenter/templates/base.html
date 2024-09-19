@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
@@ -11,16 +11,14 @@
 <body>
     <header class="main-header">
         <nav class="main-nav">
-            <a href="{% url 'equipment_list_datacenter' %}" class="header-title">Data Center</a>
+            <a href="{% url 'equipment_list_view_datacenter' %}" class="header-title">Data Center</a>
         </nav>
     </header>
 
-    <!-- Навигационный блок -->
     <nav class="navigation-bar">
-        <!-- Форма поиска по цене и кнопка текущей заявки только на странице списка оборудования -->
         {% if request.path == '/' %}
-        <form method="get" action="{% url 'equipment_list_datacenter' %}" class="search-form">
-            <input type="number" name="price_datacenter" placeholder="Максимальная цена..." value="{{ max_price_query }}" class="search-input">
+        <form method="get" action="{% url 'equipment_list_view_datacenter' %}" class="search-form">
+            <input type="number" name="price_datacenter" placeholder="Максимальная цена..." value="{{ max_price_query }}" class="search-input" min="0">
             <button type="submit" class="search-button">Поиск</button>
         </form>
 
@@ -30,17 +28,15 @@
                 Текущий заказ (Оборудование: {{ equipment_count_in_order_datacenter }})
             </a>
             {% else %}
-            <p>Current Order ID is not available.</p>
+            <p>Текущий заказ недоступен.</p>
             {% endif %}
         </div>
         {% endif %}
     </nav>
 
-    <div class="space">
-        <main>
-            {% block content %}
-            {% endblock %}
-        </main>
-    </div>
+    <main class="space">
+        {% block content %}
+        {% endblock %}
+    </main>
 </body>
 </html>

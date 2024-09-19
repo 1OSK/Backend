@@ -6,9 +6,15 @@
         <div class="order-summary">
             <div class="order-card">
                 <h2 class="order-title">Детали заказа №{{ order_datacenter.id }}</h2>
-                <p class="order-date"><strong>Дата доставки:</strong> {{ order_datacenter.date|date:"Y-m-d H:i" }}</p>
-                <p class="order-address"><strong>Адрес доставки:</strong> {{ order_datacenter.address }}</p>
+                <p class="order-date"><strong>Дата доставки:</strong> {{ order_datacenter.delivery_time|date:"Y-m-d H:i" }}</p>
+                <p class="order-address"><strong>Адрес доставки:</strong> {{ order_datacenter.delivery_address }}</p>
                 <p class="order-count"><strong>Количество комплектующих:</strong> {{ equipment_count_in_order_datacenter }}</p>
+                
+                {% if order_datacenter.status != 'completed' %}
+                    <p>Итоговая стоимость: рассчитывается...</p>
+                {% else %}
+                    <p>Итоговая стоимость: {{ total_price_datacenter }} руб.</p>
+                {% endif %}
             </div>
         </div>
 
@@ -19,7 +25,7 @@
                 <div class="equipment-item">
                     <a href="{% url 'equipment_detail_view_datacenter' item.equipment_datacenter.id %}" class="card">
                         <p class="title">{{ item.equipment_datacenter.name }}</p>
-                        <img src="{{ item.equipment_datacenter.image }}" alt="{{ item.equipment_datacenter.name }}" class="equipment-image">
+                        <img src="{{ item.equipment_datacenter.image_url }}" alt="{{ item.equipment_datacenter.name }}" class="equipment-image">
                         <div class="card-price-button-container">
                             <p class="price">{{ item.equipment_datacenter.price }} руб.</p>
                             <div class="button-container">

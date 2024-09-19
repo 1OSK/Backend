@@ -16,9 +16,9 @@
             </ul>
             <p class="price"><strong>Цена:</strong> {{ equipment_datacenter.price }} руб.</p>
         </div>
-        {% if equipment_datacenter.image %}
-            <img src="{{ equipment_datacenter.image }}" alt="{{ equipment_datacenter.name }}" class="service-detail-image">
-        {% endif %}
+        {% if equipment_datacenter.image_url %}
+    <img src="{{ equipment_datacenter.image_url }}" alt="{{ equipment_datacenter.name }}" class="service-detail-image">
+{% endif %}
     </div>
 </div>
 
