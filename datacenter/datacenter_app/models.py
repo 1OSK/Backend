@@ -1,11 +1,11 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-
+from django.utils import timezone
 class DatacenterService(models.Model):
     STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('deleted', 'Deleted'),
+        ('active', 'Активный'),
+        ('deleted', 'Удален'),
     ]
 
     name = models.CharField(max_length=255)
@@ -19,39 +19,37 @@ class DatacenterService(models.Model):
 
 class DatacenterOrder(models.Model):
     STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('deleted', 'Deleted'),
-        ('formed', 'Formed'),
-        ('completed', 'Completed'),
-        ('rejected', 'Rejected'),
+        ('draft', 'Черновик'),
+        ('deleted', 'Удален'),
+        ('formed', 'Сформирован'),
+        ('completed', 'Завершен'),
+        ('rejected', 'Отклонен'),
     ]
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
-    creation_date = models.DateTimeField(auto_now_add=True)
+    creation_date = models.DateTimeField(default=timezone.now) 
     formation_date = models.DateTimeField(null=True, blank=True)
     completion_date = models.DateTimeField(null=True, blank=True)
     creator = models.ForeignKey(User, related_name='orders_created', on_delete=models.CASCADE)
     moderator = models.ForeignKey(User, related_name='orders_moderated', on_delete=models.SET_NULL, null=True, blank=True)
 
-    delivery_address = models.CharField(max_length=255, blank=True)
-    delivery_time = models.DateTimeField(null=True, blank=True)
+    delivery_address = models.CharField(max_length=255, blank=True, null=True)  # Сделать необязательным
+    delivery_time = models.DateTimeField(null=True, blank=True)  # Оставить необязательным
     total_price = models.PositiveIntegerField(default=0)
 
     def calculate_total_price(self):
         self.total_price = sum(item.service.price * item.quantity for item in self.datacenterorderservice_set.all())
+        print(f"Итоговая стоимость для заказа {self.id}: {self.total_price}")  # Для отладки
+        self.save(update_fields=['total_price'])  # Сохраняем только поле total_price
 
     def save(self, *args, **kwargs):
-        if self.status == 'draft':
-            if DatacenterOrder.objects.filter(creator=self.creator, status='draft').exclude(id=self.id).exists():
-                raise ValidationError("У пользователя не может быть более одной заявки в статусе черновик.")
-        
-        if self.status == 'completed':
-            self.calculate_total_price()
-        
+        # Проверка на изменение статуса, чтобы пересчитать общую стоимость
+        if 'update_fields' in kwargs and 'status' in kwargs['update_fields']:
+            self.calculate_total_price()  # Вычисляем общую стоимость только при изменении статуса
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Order {self.id} by {self.creator.username}"
+        return f"Заказ {self.id} от {self.creator.username}"
 
 class DatacenterOrderService(models.Model):
     order = models.ForeignKey(DatacenterOrder, on_delete=models.CASCADE)
@@ -63,4 +61,4 @@ class DatacenterOrderService(models.Model):
         unique_together = ('order', 'service')
 
     def __str__(self):
-        return f"Order {self.order.id} - Service {self.service.name}"
+        return f"Заказ {self.order.id} - Услуга {self.service.name}"

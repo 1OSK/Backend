@@ -138,3 +138,5 @@ AWS_STORAGE_BUCKET_NAME = 'something'
 AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None  # Не используйте ACL по умолчанию
 AWS_QUERYSTRING_AUTH = False  # Не добавляйте параметры аутентификации в URL
+
+

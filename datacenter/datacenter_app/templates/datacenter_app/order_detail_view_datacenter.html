@@ -15,6 +15,11 @@
                 {% else %}
                     <p>Итоговая стоимость: {{ total_price_datacenter }} руб.</p>
                 {% endif %}
+                
+                <form method="POST" action="{% url 'update_order_status_datacenter' order_datacenter.id %}">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="delete" class="btn btn-danger">Удалить заказ</button>
+                </form>
             </div>
         </div>
 

@@ -7,11 +7,11 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # 2. Активировать виртуальную среду
-source /Users/ilinkonstantin/Documents/GitHub/Backend/venv/bin/activate
-
+cd venv/bin/
+source activate
 # 3. Запуск Docker Compose
-docker compose -f /Users/ilinkonstantin/Documents/GitHub/Backend/datacenter/docker/docker-compose.yml up -d
+docker compose -f datacenter/docker/docker-compose.yml up -d
 
 # 4. Запуск Django сервера
-cd /Users/ilinkonstantin/Documents/GitHub/Backend/datacenter
+cd datacenter
 python manage.py runserver
