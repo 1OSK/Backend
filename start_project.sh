@@ -7,11 +7,30 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # 2. Активировать виртуальную среду
-cd venv/bin/
-source activate
+VENV_PATH="/Users/ilinkonstantin/Documents/GitHub/Backend/venv/bin"
+if [ -d "$VENV_PATH" ]; then
+  cd "$VENV_PATH"
+  source activate
+else
+  echo "Виртуальная среда не найдена по пути $VENV_PATH"
+  exit 1
+fi
+
 # 3. Запуск Docker Compose
-docker compose -f datacenter/docker/docker-compose.yml up -d
+DOCKER_COMPOSE_PATH="/Users/ilinkonstantin/Documents/GitHub/Backend/datacenter/docker/docker-compose.yml"
+if [ -f "$DOCKER_COMPOSE_PATH" ]; then
+  docker compose -f "$DOCKER_COMPOSE_PATH" up -d
+else
+  echo "Файл Docker Compose не найден по пути $DOCKER_COMPOSE_PATH"
+  exit 1
+fi
 
 # 4. Запуск Django сервера
-cd datacenter
-python manage.py runserver
+DJANGO_PATH="/Users/ilinkonstantin/Documents/GitHub/Backend/datacenter"
+if [ -d "$DJANGO_PATH" ]; then
+  cd "$DJANGO_PATH"
+  python manage.py runserver
+else
+  echo "Путь к Django проекту не найден: $DJANGO_PATH"
+  exit 1
+fi
