@@ -29,7 +29,7 @@ fi
 DJANGO_PATH="/Users/ilinkonstantin/Documents/GitHub/Backend/datacenter"
 if [ -d "$DJANGO_PATH" ]; then
   cd "$DJANGO_PATH"
-  python manage.py runserver
+  python3 manage.py runserver
 else
   echo "Путь к Django проекту не найден: $DJANGO_PATH"
   exit 1

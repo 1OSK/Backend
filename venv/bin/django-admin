@@ -1,4 +1,4 @@
-#!/Users/ilinkonstantin/Desktop/datacenter/venv/bin/python3.12
+#!/Users/ilinkonstantin/Documents/GitHub/Backend/venv/bin/python3.12
 # -*- coding: utf-8 -*-
 import re
 import sys
