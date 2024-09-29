@@ -3,7 +3,6 @@ from django.contrib.auth.models import User  # Модель пользовате
 from django.core.exceptions import ValidationError  # Импорт исключения для обработки ошибок валидации
 from django.utils import timezone  # Импорт для работы с временными метками
 
-# Модель услуги в датацентре
 class DatacenterService(models.Model):
     # Варианты статуса для услуги: "Активный" или "Удален"
     STATUS_CHOICES = [
@@ -11,16 +10,16 @@ class DatacenterService(models.Model):
         ('deleted', 'Удален'),
     ]
 
-    # Название услуги с максимальной длиной 255 символов
+    # Название услуги с максимальной длиной 255 символов (обязательно)
     name = models.CharField(max_length=255)
-    # Описание услуги (текстовое поле)
-    description = models.TextField()
+    # Описание услуги (текстовое поле, может быть пустым)
+    description = models.TextField(null=True, blank=True)
     # Статус услуги, выбирается из STATUS_CHOICES, по умолчанию "Активный"
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
-    # URL-адрес изображения для услуги
-    image_url = models.URLField()
+    # URL-адрес изображения для услуги (может быть пустым)
+    image_url = models.URLField(null=True, blank=True)
     # Цена услуги, положительное целое число, по умолчанию 0
-    price = models.PositiveIntegerField(default=0)
+    price = models.PositiveIntegerField(null=True, blank=True, default=0)
 
     # Метод для удобного отображения объекта в виде строки (название услуги)
     def __str__(self):
@@ -85,10 +84,9 @@ class DatacenterOrderService(models.Model):
     order = models.ForeignKey(DatacenterOrder, on_delete=models.CASCADE)
     # Связь с моделью услуги (удаление услуги удалит запись об этой услуге в заказе)
     service = models.ForeignKey(DatacenterService, on_delete=models.CASCADE)
-    # Количество услуги в заказе, по умолчанию 1
-    quantity = models.PositiveIntegerField(default=1)
-    # Статус основной услуги (булево поле, по умолчанию False)
-    main_status = models.BooleanField(default=False)
+    
+    quantity = models.PositiveIntegerField(null=True, blank=True, default=0)
+
 
     # Класс Meta для описания метаданных модели
     class Meta:
