@@ -1,0 +1,4 @@
+/venv
+/datacenter/db.sqlite3
+/datacenter/datacenter_app/migrations
+/datacenter/datacenter_app/__pycache__
