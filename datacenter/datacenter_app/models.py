@@ -55,7 +55,7 @@ class DatacenterOrder(models.Model):
     # Время доставки (опционально)
     delivery_time = models.DateTimeField(null=True, blank=True)  # Оставить необязательным
     # Итоговая стоимость заказа, положительное целое число, по умолчанию 0
-    total_price = models.PositiveIntegerField(default=0)
+    total_price = models.PositiveIntegerField(null=True, blank=True)
 
     # Метод для расчета общей стоимости заказа
     def calculate_total_price(self):
