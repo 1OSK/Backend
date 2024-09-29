@@ -23,11 +23,11 @@ body {
 .container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 30px;
+    gap: 30px; /* Расстояние между карточками */
+    padding: 30px; /* Отступ вокруг контейнера */
+    max-width: 1300px; /* Максимальная ширина контейнера */
+    margin: 0 auto; /* Центровка контейнера */
     width: 100%;
-    max-width: 1300px;
-    margin: 0 auto;
-    padding: 30px;
 }
 
 .card {
@@ -41,26 +41,23 @@ body {
     padding: 30px;
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
-    position: relative;
-    max-width: 800px;
-    margin: 0 auto;
-    /* Удалите высоту и overflow, чтобы карточка могла изменять размер */
-    height: auto;
-    overflow: visible;
+    margin: 10px; 
+    width: 100%; 
+    min-height: 150px; 
 }
-
 .card:hover {
     transform: translateY(-10px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 .card-price-button-container {
     display: flex;
-    justify-content: space-between;
+    justify-content: space-start;
     align-items: center;
     margin-top: auto;
     padding-top: 20px;
-    gap: 10px; /* Минимальное расстояние между элементами */
+    gap: 10px; 
 }
+
 
 .price {
     font-size: 18px;
@@ -68,38 +65,61 @@ body {
     color: #333;
     margin: 0;
     white-space: nowrap; /* Предотвращает перенос текста */
+    align-self: flex-end;
 }
 
 .button-container {
     display: flex;
-    justify-content: center;
-    width: auto;
-    margin: 0;
+    flex-direction: column; /* Размещает кнопки друг под другом */
+    align-items: flex-start; /* Выравнивает кнопки по левому краю */
+    gap: 10px;
 }
 
 .card-button {
-    padding: 10px 15px;
+    padding: 10px 15px; 
     border-radius: 3px;
-    border: 1px solid #3faf4a;
+    border: 1px solid #3faf4a; 
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    color: #3faf4a;
-    background-color: #fff;
+    font-size: 14px; 
+    font-weight: 500; 
+    color: #3faf4a; 
+    background-color: #fff; 
     transition: background-color 0.3s ease, color 0.3s ease;
-    text-align: center;
-    display: inline-block;
-    white-space: nowrap; /* Предотвращает перенос текста */
-    overflow: hidden; /* Обрезает текст, если он слишком длинный */
-    text-overflow: ellipsis; /* Добавляет троеточие, если текст обрезан */
-    max-width: 100%; /* Задайте максимальную ширину, если требуется */
+    text-align: center; 
+    display: inline-block; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    max-width: 100%; 
+}
+.card-button.disabled {
+    background-color: #f0f0f0; /* Цвет фона для неактивной кнопки */
+    color: #999; /* Цвет текста для неактивной кнопки */
+    cursor: not-allowed; /* Курсор указывает, что кнопка неактивна */
 }
 
+.card-button.disabled:hover {
+    background-color: #f0f0f0; /* Убедитесь, что фон не меняется при наведении */
+    color: #999; /* Убедитесь, что цвет текста не меняется при наведении */
+}
+.current-order-button.disabled {
+    background-color: #f0f0f0; /* Цвет фона для неактивной кнопки */
+    color: #999; /* Цвет текста для неактивной кнопки */
+    cursor: not-allowed; /* Курсор указывает, что кнопка неактивна */
+    pointer-events: none; /* Отключает все события наведения и клика */
+}
+
+.current-order-button.disabled:hover {
+    background-color: #f0f0f0; /* Убедитесь, что фон не меняется при наведении */
+    color: #999; /* Убедитесь, что цвет текста не меняется при наведении */
+}
 .card-button:hover {
     background-color: #3faf4a;
     color: #fff;
 }
-
+.add-button-container {
+    margin-left: auto; /* Отодвигает контейнер кнопки вправо */
+}
 /* Контейнеры */
 .background-block {
     background-color: #ffffff;

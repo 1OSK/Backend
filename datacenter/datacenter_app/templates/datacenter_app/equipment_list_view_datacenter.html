@@ -14,6 +14,16 @@
             {% endif %}
             <div class="button-container">
                 <span class="card-button">Подробнее о комплектующем</span>
+                <div class="add-button-container">
+                    {% if user.is_authenticated %}
+                    <form method="post" action="{% url 'add_service_to_order_datacenter' equipment.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="card-button">Добавить в заказ</button>
+                    </form>
+                    {% else %}
+                    <button class="card-button disabled" disabled>Добавить в заказ</button>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </a>

@@ -4,17 +4,16 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.http import Http404
 from django.db import connection
+from django.db import models
 
 # Вьюха для отображения списка оборудования
 def equipment_list_view_datacenter(request):
-    # Получаем максимальную цену из GET-параметров
     max_price_datacenter = request.GET.get('price_datacenter', '')
     
     # Фильтруем только активные услуги
     equipment_queryset = DatacenterService.objects.filter(status='active')
     current_order = None  # Инициализируем переменную для хранения текущего заказа
     
-    # Если пользователь аутентифицирован
     if request.user.is_authenticated:
         # Получаем черновик заказа, если он существует
         current_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
@@ -24,25 +23,19 @@ def equipment_list_view_datacenter(request):
             current_order = DatacenterOrder.objects.create(creator=request.user, status='draft')
             print("Создан новый черновик:", current_order.id)
 
-        # Автоматически добавляем услуги в черновик
-        for service in equipment_queryset:
-            add_service_to_order_datacenter(request, service.id)
-
     # Фильтруем оборудование по максимальной цене, если указана
     if max_price_datacenter:
         try:
             max_price_value = int(max_price_datacenter)
             equipment_queryset = equipment_queryset.filter(price__lte=max_price_value)
         except ValueError:
-            pass  # Игнорируем, если значение цены не является числом
+            # Если значение не является числом, можно обработать ошибку
+            print("Некорректное значение цены:", max_price_datacenter)
 
-    # Подсчитываем количество всех услуг в черновике
-    total_quantity = sum(item.quantity for item in DatacenterOrderService.objects.filter(order=current_order)) if current_order else 0
-
-    # Проверяем, есть ли услуги в черновике
+    # Подсчитываем общее количество услуг в текущем заказе
+    total_quantity = DatacenterOrderService.objects.filter(order=current_order).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0 if current_order else 0
     has_services_in_order = current_order is not None and total_quantity > 0
 
-    # Возвращаем рендеринг шаблона с переданными данными
     return render(request, 'datacenter_app/equipment_list_view_datacenter.html', {
         'equipment_list_datacenter': equipment_queryset,
         'current_order_id_datacenter': current_order.id if current_order else None,
@@ -65,7 +58,6 @@ def equipment_detail_view_datacenter(request, equipment_id):
         'characteristics_list_datacenter': characteristics_list_datacenter,
     })
 
-# Функция для добавления услуги в заказ (только для аутентифицированных пользователей)
 @login_required
 def add_service_to_order_datacenter(request, service_id):
     # Получаем услугу по её ID или возвращаем 404
@@ -79,41 +71,45 @@ def add_service_to_order_datacenter(request, service_id):
         current_order = DatacenterOrder.objects.create(creator=request.user, status='draft')
         print("Создан новый черновик:", current_order.id)
 
-    # Проверяем, пустой ли текущий заказ
-    order_services_count = DatacenterOrderService.objects.filter(order=current_order).count()
+    # Проверяем, есть ли услуга в текущем заказе
+    order_service, created = DatacenterOrderService.objects.get_or_create(
+        order=current_order,
+        service=service,
+        defaults={'quantity': 0}  # Инициализируем количество как 0
+    )
 
-    # Если заказ пуст, добавляем услугу
-    if order_services_count == 0:
-        order_service, created = DatacenterOrderService.objects.get_or_create(
-            order=current_order,
-            service=service,
-            defaults={'quantity': 1}
-        )
-        # Логируем добавление или обновление услуги
-        if created:
-            print(f"Услуга {service.name} добавлена в черновик {current_order.id}.")
-        else:
-            order_service.quantity += 1
-            order_service.save()
-            print(f"Услуга {service.name} обновлена в черновике {current_order.id}.")
+    # Увеличиваем количество услуги
+    order_service.quantity += 1
+    order_service.save()
+    
+    # Логируем добавление услуги
+    if created:
+        print(f"Услуга {service.name} добавлена в черновик {current_order.id}.")
     else:
-        print(f"Услуга {service.name} не добавлена, так как черновик {current_order.id} не пуст.")
+        print(f"Услуга {service.name} обновлена в черновике {current_order.id}. Количество: {order_service.quantity}")
 
     # Перенаправляем на список услуг после добавления
     return redirect('equipment_list_view_datacenter')
 
-# Вьюха для просмотра деталей заказа (только для аутентифицированных пользователей)
 @login_required
 def order_detail_view_datacenter(request, order_id_datacenter):
-    # Получаем заказ по его ID или возвращаем 404
-    selected_order_datacenter = get_object_or_404(DatacenterOrder, id=order_id_datacenter, creator=request.user, status__in=['draft', 'formed', 'completed'])
-    
+    # Пытаемся получить заказ по его ID или возвращаем 404
+    selected_order_datacenter = get_object_or_404(DatacenterOrder, id=order_id_datacenter, creator=request.user)
+
     # Получаем все услуги, добавленные в заказ
     equipment_in_order_datacenter = DatacenterOrderService.objects.filter(order=selected_order_datacenter)
-    
-    # Подсчитываем количество услуг в заказе
-    equipment_count_in_order_datacenter = sum(item.quantity for item in equipment_in_order_datacenter)
-    
+
+    # Проверяем статус заказа
+    if selected_order_datacenter.status == 'deleted' or not equipment_in_order_datacenter.exists():
+        # Возвращаем пустую корзину, если заказ удален или нет услуг
+        return render(request, 'datacenter_app/order_detail_view_datacenter.html', {
+            'order_datacenter': selected_order_datacenter,
+            'equipment_in_order_datacenter': None,  # Указываем None для услуг
+            'equipment_count_in_order_datacenter': 0,  # Указываем 0 для количества услуг
+            'total_price_datacenter': 0,  # Указываем 0 для общей стоимости
+            'is_empty_cart': True,  # Добавляем флаг для проверки пустой корзины
+        })
+
     # Создаем список данных об услугах для отображения в шаблоне
     equipment_data = [
         {
@@ -124,15 +120,18 @@ def order_detail_view_datacenter(request, order_id_datacenter):
         for item in equipment_in_order_datacenter
     ]
 
+    # Подсчитываем общее количество услуг в заказе
+    equipment_count_in_order_datacenter = sum(item.quantity for item in equipment_in_order_datacenter)
+
     # Возвращаем рендеринг шаблона с переданными данными
     return render(request, 'datacenter_app/order_detail_view_datacenter.html', {
         'order_datacenter': selected_order_datacenter,
         'equipment_in_order_datacenter': equipment_data,
         'equipment_count_in_order_datacenter': equipment_count_in_order_datacenter,
         'total_price_datacenter': selected_order_datacenter.total_price,
+        'is_empty_cart': False,  # Указываем, что корзина не пустая
     })
 
-# Функция для обновления статуса заказа (только для аутентифицированных пользователей)
 @login_required
 def update_order_status_datacenter(request, order_id_datacenter):
     # Обрабатываем только POST-запросы
@@ -160,16 +159,9 @@ def update_order_status_datacenter(request, order_id_datacenter):
                     WHERE id = %s
                 """, [order_id_datacenter])
                 print(f"Заказ {order.id} удален.")
-                
-                # Создаем новый черновик
-                cursor.execute("""
-                    INSERT INTO datacenter_app_datacenterorder (creator_id, status, total_price, creation_date)
-                    VALUES (%s, 'draft', 0, NOW())
-                    RETURNING id
-                """, [request.user.id])
-                new_order_id = cursor.fetchone()[0]
-                print(f"Создан новый черновик: {new_order_id}")
-                
+
+                # Здесь не создаем новый черновик, это будет сделано в add_service_to_order_datacenter
+
                 # Перенаправляем на список услуг после удаления заказа
                 return redirect('equipment_list_view_datacenter')
 

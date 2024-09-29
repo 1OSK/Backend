@@ -16,34 +16,40 @@
                     <p>Итоговая стоимость: {{ total_price_datacenter }} руб.</p>
                 {% endif %}
                 
-                <form method="POST" action="{% url 'update_order_status_datacenter' order_datacenter.id %}">
-                    {% csrf_token %}
-                    <button type="submit" name="action" value="delete" class="btn btn-danger">Удалить заказ</button>
-                </form>
+                {% if order_datacenter.status != 'deleted' %}
+                    <form method="POST" action="{% url 'update_order_status_datacenter' order_datacenter.id %}">
+                        {% csrf_token %}
+                        <button type="submit" name="action" value="delete" class="btn btn-danger">Удалить заказ</button>
+                    </form>
+                {% endif %}
             </div>
         </div>
 
         <div class="equipment-list-container">
             <h2 class="equipment-heading">Комплектующие в заказе</h2>
             <div class="equipment-list">
-                {% for item in equipment_in_order_datacenter %}
-                <div class="equipment-item">
-                    <a href="{% url 'equipment_detail_view_datacenter' item.equipment_datacenter.id %}" class="card">
-                        <p class="title">{{ item.equipment_datacenter.name }}</p>
-                        <img src="{{ item.equipment_datacenter.image_url }}" alt="{{ item.equipment_datacenter.name }}" class="equipment-image">
-                        <div class="card-price-button-container">
-                            <p class="price">{{ item.equipment_datacenter.price }} руб.</p>
-                            <div class="button-container">
-                                <span class="card-button">Подробнее</span>
+                {% if equipment_in_order_datacenter %}
+                    {% for item in equipment_in_order_datacenter %}
+                    <div class="equipment-item">
+                        <a href="{% url 'equipment_detail_view_datacenter' item.equipment_datacenter.id %}" class="card">
+                            <p class="title">{{ item.equipment_datacenter.name }}</p>
+                            <img src="{{ item.equipment_datacenter.image_url }}" alt="{{ item.equipment_datacenter.name }}" class="equipment-image">
+                            <div class="card-price-button-container">
+                                <p class="price">{{ item.equipment_datacenter.price }} руб.</p>
+                                <div class="button-container">
+                                    <span class="card-button">Подробнее</span>
+                                </div>
                             </div>
+                        </a>
+                        <div class="item-details">
+                            <p class="quantity"><strong>Количество:</strong> {{ item.quantity_datacenter }}</p>
+                            <p class="total-price"><strong>Общая стоимость:</strong> {{ item.total_price_datacenter }} руб.</p>
                         </div>
-                    </a>
-                    <div class="item-details">
-                        <p class="quantity"><strong>Количество:</strong> {{ item.quantity_datacenter }}</p>
-                        <p class="total-price"><strong>Общая стоимость:</strong> {{ item.total_price_datacenter }} руб.</p>
                     </div>
-                </div>
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <p>Ваш заказ пуст. Добавьте комплектующие, чтобы продолжить.</p>
+                {% endif %}
             </div>
         </div>
     </div>
