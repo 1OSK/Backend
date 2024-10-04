@@ -2,3 +2,17 @@
 /datacenter/db.sqlite3
 /datacenter/datacenter_app/migrations
 /datacenter/datacenter_app/__pycache__
+*.pyc
+__pycache__/
+*.log
+*.pot
+*.py[cod]
+.Python
+venv/
+env/
+.venv/
+local_settings.py
+db.sqlite3
+staticfiles/
+media/
+/Users/ilinkonstantin/Documents/GitHub/Backend/venv
