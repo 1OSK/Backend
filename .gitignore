@@ -16,3 +16,5 @@ db.sqlite3
 staticfiles/
 media/
 
+/venv/lib/
+/venv/lib/python3.12/site-packages
