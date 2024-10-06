@@ -2,21 +2,21 @@
 
 {% block content %}
 <div class="container">
-    {% for equipment in equipment_list_datacenter %}
-    <a href="{% url 'equipment_detail_view_datacenter' equipment.id %}" class="card">
-        <p class="title">{{ equipment.name }}</p>
+    {% for service in services %}
+    <a href="{% url 'service_detail_datacenter' service.id %}" class="card">
+        <p class="title">{{ service.name }}</p>
         <div class="image-container">
-            <img src="{{ equipment.image_url }}" alt="{{ equipment.name }}" class="service-image">
+            <img src="{{ service.image_url }}" alt="{{ service.name }}" class="service-image">
         </div>
         <div class="card-price-button-container">
-            {% if equipment.price %}
-            <p class="price">{{ equipment.price }} руб.</p>
+            {% if service.price %}
+            <p class="price">{{ service.price }} руб.</p>
             {% endif %}
             <div class="button-container">
                 <span class="card-button">Подробнее о комплектующем</span>
                 <div class="add-button-container">
                     {% if user.is_authenticated %}
-                    <form method="post" action="{% url 'add_service_to_order_datacenter' equipment.id %}">
+                    <form method="post" action="{% url 'add_service_to_draft' service.id %}">
                         {% csrf_token %}
                         <button type="submit" class="card-button">Добавить в заказ</button>
                     </form>

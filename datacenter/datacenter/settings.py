@@ -39,18 +39,30 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'datacenter_app',
     'storages',
+    'rest_framework',
+
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
 
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ]
+}
+# Отключение CSRF защиты
+CSRF_COOKIE_SECURE = False
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_HTTPONLY = False
 ROOT_URLCONF = 'datacenter.urls'
 import os
 TEMPLATES = [
@@ -131,12 +143,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
 
-AWS_S3_ENDPOINT_URL = 'http://localhost:9000'
+
+
+AWS_STORAGE_BUCKET_NAME = 'something'
 AWS_ACCESS_KEY_ID = 'minio'
 AWS_SECRET_ACCESS_KEY = 'minio124'
-AWS_STORAGE_BUCKET_NAME = 'something'
-AWS_S3_FILE_OVERWRITE = False
-AWS_DEFAULT_ACL = None  # Не используйте ACL по умолчанию
-AWS_QUERYSTRING_AUTH = False  # Не добавляйте параметры аутентификации в URL
-
-
+AWS_S3_ENDPOINT_URL = 'localhost:9000'
+MINIO_USE_SSL = False

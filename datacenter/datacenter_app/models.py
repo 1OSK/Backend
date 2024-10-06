@@ -96,3 +96,4 @@ class DatacenterOrderService(models.Model):
     # Метод для представления объекта в виде строки (например, "Заказ 1 - Услуга Hosting")
     def __str__(self):
         return f"Заказ {self.order.id} - Услуга {self.service.name}"
+    

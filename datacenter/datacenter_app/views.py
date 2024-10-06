@@ -1,170 +1,387 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
+from datetime import datetime
+from django.core.exceptions import ValidationError
+from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse, Http404
+from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST, require_http_methods
 from django.utils import timezone
-from django.http import Http404
-from django.db import connection
-from django.db import models
+import json
+from rest_framework.exceptions import NotFound
+import re
+from .minio import add_pic 
+from django.conf import settings
+from minio import Minio
+from rest_framework.response import Response
+from rest_framework import status
+from .singleton import Creator, Moderator
+from django.contrib.auth import authenticate, login, logout
+from datacenter.settings import DEFAULT_FILE_STORAGE
+from rest_framework.views import APIView
+from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from .serializers import UserSerializer
+from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
+from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer
 
-# Вьюха для отображения списка оборудования
-def equipment_list_view_datacenter(request):
-    # Получаем максимальную цену из GET-запроса
-    max_price_datacenter = request.GET.get('price_datacenter', '')
-    
-    # Фильтруем только активные услуги
-    equipment_queryset = DatacenterService.objects.filter(status='active')
-    current_order = None  # Инициализируем переменную для хранения текущего заказа
-    
-    # Проверяем, аутентифицирован ли пользователь
-    if request.user.is_authenticated:
-        # Получаем черновик заказа, если он существует
-        current_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
+# 1. GET: Список услуг с черновиком заказа пользователя
+class DatacenterServiceListView(APIView):
+    def get(self, request):
+        services = DatacenterService.objects.all()
+        
+        # Здесь проверяем, аутентифицирован ли пользователь
+        draft_order_id = None
+        if request.user.is_authenticated:
+            draft_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
+            draft_order_id = draft_order.id if draft_order else None
 
-    # Фильтруем оборудование по максимальной цене, если указана
-    if max_price_datacenter:
-        try:
-            # Преобразуем значение цены в целое число
-            max_price_value = int(max_price_datacenter)
-            # Применяем фильтр по цене
-            equipment_queryset = equipment_queryset.filter(price__lte=max_price_value)
-        except ValueError:
-            # Если значение не является числом, выводим ошибку в консоль
-            print("Некорректное значение цены:", max_price_datacenter)
+        services_list = DatacenterServiceSerializer(services, many=True).data
 
-    # Подсчитываем общее количество услуг в текущем заказе
-    total_quantity = DatacenterOrderService.objects.filter(order=current_order).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0 if current_order else 0
-    has_services_in_order = current_order is not None and total_quantity > 0
-
-    # Возвращаем рендеринг шаблона с переданными данными
-    return render(request, 'datacenter_app/equipment_list_view_datacenter.html', {
-        'equipment_list_datacenter': equipment_queryset,
-        'current_order_id_datacenter': current_order.id if current_order else None,
-        'equipment_count_in_order_datacenter': total_quantity,
-        'max_price_datacenter': max_price_datacenter,
-        'has_services_in_order': has_services_in_order,
-    })
-
-# Вьюха для отображения деталей услуги
-def equipment_detail_view_datacenter(request, equipment_id):
-    # Получаем услугу по её ID или возвращаем 404
-    equipment_datacenter = get_object_or_404(DatacenterService, id=equipment_id)
-    
-    # Преобразуем описание услуги в список характеристик, если описание существует
-    characteristics_list_datacenter = equipment_datacenter.description.split(',') if equipment_datacenter.description else []
-
-    # Возвращаем рендеринг шаблона с переданными данными
-    return render(request, 'datacenter_app/equipment_detail_view_datacenter.html', {
-        'equipment_datacenter': equipment_datacenter,
-        'characteristics_list_datacenter': characteristics_list_datacenter,
-    })
-
-
-@login_required
-def add_service_to_order_datacenter(request, service_id):
-    # Получаем услугу по её ID или возвращаем 404, если услуга не найдена
-    service = get_object_or_404(DatacenterService, id=service_id)
-
-    # Получаем или создаем черновик заказа для текущего пользователя
-    current_order, created_order = DatacenterOrder.objects.get_or_create(
-        creator=request.user, 
-        status='draft'
-    )
-
-    # Проверяем, есть ли услуга уже в текущем заказе
-    order_service, created_service = DatacenterOrderService.objects.get_or_create(
-        order=current_order,
-        service=service,
-        defaults={'quantity': 0}  # Инициализируем количество как 0, если услуги ещё нет
-    )
-
-    # Увеличиваем количество услуги на 1
-    order_service.quantity += 1
-    order_service.save()  # Сохраняем изменения в базе данных
-    
-    # Логируем добавление или обновление услуги в черновике заказа
-    if created_service:
-        print(f"Услуга {service.name} добавлена в черновик {current_order.id}.")
-    else:
-        print(f"Услуга {service.name} обновлена в черновике {current_order.id}. Количество: {order_service.quantity}")
-
-    # Перенаправляем пользователя на список услуг после добавления
-    return redirect('equipment_list_view_datacenter')
-
-@login_required
-def order_detail_view_datacenter(request, order_id_datacenter):
-    # Пытаемся получить заказ по его ID или возвращаем 404
-    selected_order_datacenter = get_object_or_404(DatacenterOrder, id=order_id_datacenter, creator=request.user)
-
-    # Получаем все услуги, добавленные в заказ
-    equipment_in_order_datacenter = DatacenterOrderService.objects.filter(order=selected_order_datacenter)
-
-    # Проверяем статус заказа
-    if selected_order_datacenter.status == 'deleted' or not equipment_in_order_datacenter.exists():
-        # Возвращаем пустую корзину, если заказ удален или нет услуг
-        return render(request, 'datacenter_app/order_detail_view_datacenter.html', {
-            'order_datacenter': selected_order_datacenter,
-            'equipment_in_order_datacenter': None,  # Указываем None для услуг
-            'equipment_count_in_order_datacenter': 0,  # Указываем 0 для количества услуг
-            'total_price_datacenter': 0,  # Указываем 0 для общей стоимости
-            'is_empty_cart': True,  # Добавляем флаг для проверки пустой корзины
-        })
-
-    # Создаем список данных об услугах для отображения в шаблоне
-    equipment_data = [
-        {
-            'equipment_datacenter': item.service,
-            'quantity_datacenter': item.quantity,
-            'total_price_datacenter': item.service.price * item.quantity
+        response_data = {
+            'services': services_list,
+            'draft_order_id': draft_order_id
         }
-        for item in equipment_in_order_datacenter
-    ]
 
-    # Подсчитываем общее количество услуг и общую стоимость с помощью ORM
-    equipment_count_in_order_datacenter = equipment_in_order_datacenter.aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0
-    total_price_datacenter = sum(item.service.price * item.quantity for item in equipment_in_order_datacenter)
+        return JsonResponse(response_data)
 
-    # Возвращаем рендеринг шаблона с переданными данными
-    return render(request, 'datacenter_app/order_detail_view_datacenter.html', {
-        'order_datacenter': selected_order_datacenter,
-        'equipment_in_order_datacenter': equipment_data,
-        'equipment_count_in_order_datacenter': equipment_count_in_order_datacenter,
-        'total_price_datacenter': total_price_datacenter,
-        'is_empty_cart': False,  # Указываем, что корзина не пустая
-    })
+# 2. GET: Получение информации об одной услуге
+class DatacenterServiceDetailView(APIView):
+    def get(self, request, service_id):
+        service = get_object_or_404(DatacenterService.objects.exclude(status='удалена'), id=service_id)
+        service_data = DatacenterServiceSerializer(service).data
+        return JsonResponse(service_data)
 
-@login_required
-def update_order_status_datacenter(request, order_id_datacenter):
-    # Обрабатываем только POST-запросы
-    if request.method == 'POST':
-        action = request.POST.get('action')  # Получаем действие (например, завершить или удалить заказ)
-        # Получаем заказ по ID и проверяем, что он принадлежит текущему пользователю
-        order = get_object_or_404(DatacenterOrder, id=order_id_datacenter, creator=request.user)
+# 3. POST: Создание новой услуги
+class DatacenterServiceCreateView(APIView):
+    def post(self, request):
+        # Сериализация данных для создания новой услуги
+        serializer = DatacenterServiceSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            serializer.save()  # Сохраняем услугу, если данные корректны
+            return JsonResponse(serializer.data, status=status.HTTP_201_CREATED)
+        
+        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Открываем прямое соединение с базой данных для выполнения SQL-запросов
-        with connection.cursor() as cursor:
-            # Если действие - завершение заказа
-            if action == 'complete':
-                cursor.execute("""
-                    UPDATE datacenter_app_datacenterorder
-                    SET status = 'completed', completion_date = NOW(),
-                    total_price = (SELECT SUM(quantity * service_id) FROM datacenter_app_datacenterorderservice WHERE order_id = %s)
-                    WHERE id = %s
-                """, [order_id_datacenter, order_id_datacenter])
-                print(f"Заказ {order.id} завершен.")
+# 4. PUT: Обновление услуги
+class DatacenterServiceUpdateView(APIView):
+    def put(self, request, service_id):
+        # Получаем услугу, исключая удаленные услуги
+        service = get_object_or_404(DatacenterService.objects.exclude(status='удалена'), id=service_id)
+        
+        # Применяем данные запроса через сериализатор
+        serializer = DatacenterServiceSerializer(service, data=request.data, partial=True)
 
-            # Если действие - удаление заказа
-            elif action == 'delete':
-                cursor.execute("""
-                    UPDATE datacenter_app_datacenterorder
-                    SET status = 'deleted'
-                    WHERE id = %s
-                """, [order_id_datacenter])
-                print(f"Заказ {order.id} удален.")
+        # Если данные валидны, сохраняем изменения
+        if serializer.is_valid():
+            serializer.save()
+            return JsonResponse({'message': 'Service updated successfully'})
+        
+        # Возвращаем ошибки валидации, если они есть
+        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+# 5. DELETE: Удаление услуги (включая изображение)
+class DatacenterServiceDeleteView(APIView):
+    def delete(self, request, service_id):
 
-                # Здесь не создаем новый черновик, это будет сделано в add_service_to_order_datacenter
+        service = get_object_or_404(DatacenterService.objects.exclude(status='удалена'), id=service_id)
 
-                # Перенаправляем на список услуг после удаления заказа
-                return redirect('equipment_list_view_datacenter')
+        # Удаление изображения из MinIO
+        if service.image_url:
+            client = Minio(
+                endpoint=settings.AWS_S3_ENDPOINT_URL,
+                access_key=settings.AWS_ACCESS_KEY_ID,
+                secret_key=settings.AWS_SECRET_ACCESS_KEY,
+                secure=settings.MINIO_USE_SSL
+            )
+            try:
+                client.remove_object('something', f"{service.id}.png")  # Предполагается, что имя объекта соответствует ID
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=400)
 
-    # Если запрос не является POST, возвращаем 404
-    raise Http404("Недопустимый метод запроса")
+        service.status = 'удалена'
+        service.save()
+
+        return JsonResponse({'message': 'Service deleted successfully'})
+
+# 6. POST: Добавление услуги в черновик заказа
+class AddServiceToDraftOrderView(APIView):
+    def post(self, request, service_id):
+        # Получение сервиса или возврат 404, если он не найден
+        service = get_object_or_404(DatacenterService.objects.exclude(status='удалена'), id=service_id)
+        
+        # Используйте стандартного пользователя или создайте нового
+        default_user = User.objects.get(username='admin_datacenter')  # Замените 'standard_user' на имя вашего пользователя
+
+        # Получаем или создаем черновик заказа для стандартного пользователя
+        draft_order, created = DatacenterOrder.objects.get_or_create(creator=default_user, status='draft')
+
+        # Получаем или создаем услугу в черновике
+        order_service, created = DatacenterOrderService.objects.get_or_create(order=draft_order, service=service)
+
+        if created:
+            order_service.quantity = 1
+        else:
+            order_service.quantity += 1
+            
+        order_service.save()
+
+        # Пересчитываем общую стоимость черновика
+        draft_order.calculate_total_price()
+
+        return JsonResponse({'message': 'Service added to draft order'})
+
+# 7. POST: Добавление или замена изображения услуги
+class AddImageToServiceView(APIView):
+    def post(self, request, service_id):
+        
+        
+
+        service = get_object_or_404(DatacenterService.objects.exclude(status='удалена'), id=service_id)
+
+        if 'image' not in request.FILES:
+            return JsonResponse({'error': 'No image provided'}, status=400)
+
+        image = request.FILES['image']
+
+        # Добавление изображения через minio.py
+        response = add_pic(service, image)
+        if response.status_code != 200:
+            return response
+
+        return JsonResponse({'message': 'Image added/updated successfully'})
+
+# 8. GET: Список заявок с фильтрацией
+class DatacenterOrderListView(APIView):
+    def get(self, request):
+        # Получаем параметры фильтрации из запроса
+        status_filter = request.GET.get('status')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        # Начинаем с выборки всех заказов
+        orders = DatacenterOrder.objects.all()  # Получаем все заказы
+
+        # Применяем фильтрацию по статусу, если он указан
+        if status_filter:
+            orders = orders.filter(status=status_filter)  # Фильтруем по статусу
+
+        # Применяем фильтрацию по дате, если указаны обе даты
+        if start_date and end_date:
+            try:
+                # Преобразуем строки в объекты даты
+                start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
+                end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
+                orders = orders.filter(creation_date__range=[start_date, end_date])  # Фильтруем по дате
+            except ValueError:
+                return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=400)
+
+        # Сериализуем отфильтрованные заказы
+        serializer = DatacenterOrderSerializer(orders, many=True)
+        return Response({'orders': serializer.data})
+
+# 9. GET: Получение информации о заявке
+class DatacenterOrderDetailView(APIView):
+    def get(self, request, order_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        # Проверка статуса заказа
+        if order.status == 'deleted':
+            raise NotFound({'error': 'Заказ не найден'})
+
+        # Получение всех услуг, связанных с заказом через промежуточную модель
+        services = order.datacenterorderservice_set.all()
+        service_serializer = DatacenterOrderServiceSerializer(services, many=True)
+
+        response = {
+            'order_id': order.id,
+            'status': order.status,
+            'creation_date': order.creation_date,
+            'formation_date': order.formation_date,
+            'completion_date': order.completion_date,
+            'delivery_address': order.delivery_address,
+            'delivery_time': order.delivery_time,
+            'total_price': order.total_price,
+            'services': service_serializer.data,
+        }
+
+        return Response(response)
+
+# 10. PUT: Обновление полей заявки
+class UpdateOrderFieldsView(APIView):
+    def put(self, request, order_id):
+        # Получаем заказ или возвращаем 404, если он не найден
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        # Получаем параметры из URL
+        status_param = request.query_params.get('status')
+        delivery_address_param = request.query_params.get('delivery_address')
+        delivery_time_param = request.query_params.get('delivery_time')
+
+        # Обновляем поля заказа на основе переданных параметров
+        if status_param is not None:
+            order.status = status_param  # Обновляем статус, если он передан
+        if delivery_address_param is not None:
+            order.delivery_address = delivery_address_param  # Обновляем адрес доставки
+        if delivery_time_param is not None:
+            order.delivery_time = delivery_time_param  # Обновляем время доставки
+        
+        # Вычисляем общую стоимость, если статус изменился
+        if status_param is not None:
+            order.calculate_total_price()
+
+        # Сохраняем изменения
+        order.save()
+
+        return Response({'message': 'Order updated successfully'}, status=status.HTTP_200_OK)
+
+# 11. PUT: Отправка заявки
+class SubmitOrderView(APIView):
+    def put(self, request, order_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        # Установите создателя заказа как константу
+        order.creator = order.creator  # Здесь можно задать создателя, если это требуется по логике
+        
+        
+
+        # Проверьте обязательные поля, например, адрес доставки и время доставки
+        if not order.delivery_address or not order.delivery_time:
+            return Response({'error': 'Missing required fields'}, status=400)
+
+        # Установите статус заказа как 'сформирован'
+        order.status = 'formed'  # Убедитесь, что статус соответствует вашим требованиям
+        order.save()  # Сохраните изменения в заказе
+        return Response({'message': 'Order submitted successfully'}, status=200)
+
+# 12. PUT: Завершение или отклонение заявки
+class FinalizeOrRejectOrderView(APIView):
+    def put(self, request, order_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        
+       
+
+        # Логирование текущего статуса
+        print(f'Current status: {order.status}')
+
+        data = request.data
+        action = data.get('action')
+
+        if action == 'completed':
+            order.status = 'completed'
+            order.completed_at = datetime.now()
+            order.calculate_total_price()
+        elif action == 'rejected':
+            order.status = 'rejected'
+
+        # Логирование статуса перед сохранением
+        print(f'Updating status to: {order.status}')
+        
+        order.save()
+        return Response({'message': f'Order {action}d successfully'})
+# 13. DELETE: Удаление заявки
+class DeleteOrderView(APIView):
+    def delete(self, request, order_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        order.status = 'deleted'
+        order.save()
+        return Response({'message': 'Order deleted successfully'}, status=204)
+
+# 14. DELETE: Удаление услуги из заявки
+class DeleteServiceFromOrderView(APIView):
+    def delete(self, request, order_id, service_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+
+        if order.status == 'удалена':
+            return Response({'error': 'Order is deleted, cannot remove services'}, status=400)
+
+        service = get_object_or_404(DatacenterService, id=service_id)
+        order_service = DatacenterOrderService.objects.filter(order=order, service=service).first()
+
+        if order_service:
+            order_service.delete()
+            return Response({'message': 'Service removed from order'}, status=204)
+
+        return Response({'error': 'Service not found in order'}, status=404)
+
+# 15. PUT: Изменение количества/порядка/значения услуги в заявке
+class UpdateServiceInOrderView(APIView):
+    def put(self, request, order_id, service_id):
+        order = get_object_or_404(DatacenterOrder, id=order_id)
+        service = get_object_or_404(DatacenterService, id=service_id)
+
+        order_service = DatacenterOrderService.objects.filter(order=order, service=service).first()
+
+        if order_service:
+            data = request.data
+            new_quantity = data.get('quantity')
+
+            if new_quantity is None:
+                return Response({'error': 'No quantity provided'}, status=400)
+
+            try:
+                new_quantity = int(new_quantity)
+                if new_quantity < 1:
+                    return Response({'error': 'Quantity must be positive'}, status=400)
+            except ValueError:
+                return Response({'error': 'Invalid quantity'}, status=400)
+
+            order_service.quantity = new_quantity
+            order_service.save()
+            return Response({'message': 'Service quantity updated in order'}, status=200)
+
+        return Response({'error': 'Service not found in order'}, status=404)
+
+# 16. POST: Регистрация пользователя
+class RegisterUserDatacenter(APIView):
+    def post(self, request):
+        data = request.data
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+
+        if User.objects.filter(username=username).exists():
+            return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Проверка формата email
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            return Response({'error': 'Invalid email format'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create_user(username=username, password=password, email=email)
+        return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
+
+# 17. PUT: Обновление информации о пользователе
+class UpdateUserDatacenter(APIView):
+
+    def put(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)  # Получаем пользователя по ID
+        data = request.data
+
+        serializer = UserSerializer(user, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'User updated successfully'}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# 18. POST: Вход пользователя
+class LoginUserDatacenter(APIView):
+    def post(self, request):
+        data = request.data
+        username = data.get('username')
+        password = data.get('password')
+
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return Response({'message': 'User logged in successfully'}, status=status.HTTP_200_OK)
+        return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
+
+# 19. POST: Выход пользователя
+class LogoutUserDatacenter(APIView):
+
+    def post(self, request):
+        logout(request)
+        return Response({'message': 'User logged out successfully'}, status=status.HTTP_200_OK)
