@@ -6,12 +6,12 @@ from .singleton import Creator  # Импортируйте класс Creator
 class DatacenterServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = DatacenterService
-        fields = ['id', 'name', 'price', 'status']  # Укажите поля, которые вы хотите вернуть
+        fields = ['id', 'name', 'price', 'status', 'image_url']  # Укажите поля, которые вы хотите вернуть
 
 class DatacenterOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = DatacenterOrder
-        fields = ['id', 'status', 'creation_date', 'total_price']  # Укажите нужные поля
+        fields = ['id', 'status', 'creation_date', 'completion_date', 'creator', 'moderator', 'delivery_address','delivery_time', 'total_price']  # Укажите нужные поля
 
 class DatacenterOrderServiceSerializer(serializers.ModelSerializer):
     service = DatacenterServiceSerializer()  # Вложенный сериализатор для услуги
