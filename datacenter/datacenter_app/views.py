@@ -296,10 +296,13 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
         if not action:
             return Response({'error': 'Missing action parameter'}, status=status.HTTP_400_BAD_REQUEST)
 
-        
-        creator = get_mock_user()
+        # Получаем создателя и модератора из моковых пользователей
+        moderator = get_mock_user()
 
-       
+        # Проверка, является ли текущий пользователь создателем или модератором
+        if request.user.id not in [moderator.id]:
+            return Response({'error': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+
         if action == 'completed':
             order.status = 'completed'
             order.completion_date = timezone.now()  
