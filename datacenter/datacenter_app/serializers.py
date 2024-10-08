@@ -1,12 +1,13 @@
 from rest_framework import serializers
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
 from django.contrib.auth.models import User
-from .singleton import Creator  # Импортируйте класс Creator
+from .singleton import Creator 
 
 class DatacenterServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = DatacenterService
-        fields = ['id', 'name', 'price', 'status', 'image_url']  # Укажите поля, которые вы хотите вернуть
+        fields = ['id', 'name', 'price', 'status', 'image_url'] 
+
 
 class DatacenterOrderSerializer(serializers.ModelSerializer):
     class Meta:

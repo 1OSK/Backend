@@ -17,7 +17,7 @@ class DatacenterService(models.Model):
     # Статус услуги, выбирается из STATUS_CHOICES, по умолчанию "Активный"
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
     # URL-адрес изображения для услуги (может быть пустым)
-    image_url = models.URLField(null=True, blank=True)
+    image_url = models.URLField(max_length=200, blank=True, null=True)
     # Цена услуги, положительное целое число, по умолчанию 0
     price = models.PositiveIntegerField(null=True, blank=True, default=0)
 

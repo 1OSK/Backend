@@ -27,6 +27,7 @@ from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
 from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from django.core.files.uploadedfile import InMemoryUploadedFile
 
 class DatacenterServiceViewSet(viewsets.ModelViewSet):
     queryset = DatacenterService.objects.all()
@@ -34,12 +35,27 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
 
     # 1. GET: Список услуг с черновиком заказа пользователя
     def list(self, request):
+    # Получаем экземпляр Creator и пользователя
+        creator_instance = Creator.get_instance()
+
+    # Подменяем request.user на аутентифицированного пользователя
+        request.user = creator_instance.user  
+
+    # Получаем параметры фильтрации с префиксом "datacenter"
+        min_price = request.GET.get('datacenter_min_price', None)
+        max_price = request.GET.get('datacenter_max_price', None)
+
         services = self.queryset
-        
-        draft_order_id = None
-        if request.user.is_authenticated:
-            draft_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
-            draft_order_id = draft_order.id if draft_order else None
+
+    # Применяем фильтрацию по диапазону цены
+        if min_price:
+            services = services.filter(price__gte=min_price)
+        if max_price:
+            services = services.filter(price__lte=max_price)
+
+    # Теперь код считает, что пользователь авторизован
+        draft_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
+        draft_order_id = draft_order.id if draft_order else None
 
         services_list = self.get_serializer(services, many=True).data
 
@@ -56,9 +72,49 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
         service_data = self.get_serializer(service).data
         return Response(service_data)
 
-    # 3. POST: Создание новой услуги (уже обработан в ModelViewSet)
+    # 3. POST: Создание новой услуги с изображением
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_service = serializer.save()
 
-    # 4. PUT: Обновление услуги (уже обработан в ModelViewSet)
+        # Проверка на наличие изображения и его добавление только если оно предоставлено
+        if 'image' in request.FILES:
+            image = request.FILES['image']
+
+        # Добавление изображения через minio.py
+            response = add_pic(new_service, image)
+            if response.status_code != status.HTTP_200_OK:
+                return response
+
+    # Возвращаем данные новой услуги
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    # 4. PUT: Обновление услуги с изображением
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()  # Получаем объект услуги для обновления
+
+    # Валидируем входные данные
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        updated_service = serializer.save()
+
+        # Проверяем, предоставлено ли новое изображение
+        if 'image' in request.FILES:
+            image = request.FILES['image']
+
+            # Добавление/замена изображения через minio.py
+            response = add_pic(updated_service, image)
+            if isinstance(response, Response) and response.status_code != status.HTTP_200_OK:
+                return response  # Вернуть ошибку, если загрузка не удалась
+
+            # Проверяем результат от add_pic, заменяем URL изображения
+            if isinstance(response.data, dict) and "image_url" in response.data:
+                updated_service.image_url = response.data["image_url"]
+                updated_service.save()
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     # 5. DELETE: Удаление услуги (можно переопределить, если нужно)
     def destroy(self, request, pk=None):
@@ -134,9 +190,10 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
 
     # 8. GET: Список заявок с фильтрацией
     def list(self, request):
-        status_filter = request.GET.get('status')
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
+        # Получаем параметры фильтрации с префиксом "datacenter"
+        status_filter = request.GET.get('datacenter_status')
+        start_date = request.GET.get('datacenter_start_date')
+        end_date = request.GET.get('datacenter_end_date')
 
         orders = DatacenterOrder.objects.all()  # Получаем все заказы
 
