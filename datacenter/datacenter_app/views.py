@@ -1,61 +1,69 @@
-from datetime import datetime
-from venv import logger
-from django.core.exceptions import ValidationError
+
 from django.contrib.auth.models import User
-from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, Http404
 from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST, require_http_methods
 from django.utils import timezone
-import json
-from rest_framework.exceptions import NotFound
 import re
 from .minio import add_pic 
 from django.conf import settings
 from minio import Minio
 from rest_framework.response import Response
 from rest_framework import status
-from .singleton import Creator, Moderator
 from django.contrib.auth import authenticate, login, logout
-from datacenter.settings import DEFAULT_FILE_STORAGE
-from rest_framework.views import APIView
-from rest_framework.decorators import api_view
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from .serializers import UserSerializer
+from .singleton import get_mock_user
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
 from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from django.core.files.uploadedfile import InMemoryUploadedFile
 
 class DatacenterServiceViewSet(viewsets.ModelViewSet):
     queryset = DatacenterService.objects.all()
     serializer_class = DatacenterServiceSerializer
 
-    # 1. GET: Список услуг с черновиком заказа пользователя
+    def get_current_user(self):
+        """Получаем текущего пользователя (мокового пользователя)"""
+        mock_user = get_mock_user()
+
+        
+        if not isinstance(mock_user, User):
+            raise ValueError("Неверный пользователь")
+
+        return mock_user
+
     def list(self, request):
-    # Получаем экземпляр Creator и пользователя
-        creator_instance = Creator.get_instance()
+        try:
+            mock_user = self.get_current_user()
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Подменяем request.user на аутентифицированного пользователя
-        request.user = creator_instance.user  
-
-    # Получаем параметры фильтрации с префиксом "datacenter"
-        min_price = request.GET.get('datacenter_min_price', None)
-        max_price = request.GET.get('datacenter_max_price', None)
+        
+        min_price = request.GET.get('datacenter_min_price')
+        max_price = request.GET.get('datacenter_max_price')
 
         services = self.queryset
 
-    # Применяем фильтрацию по диапазону цены
+        
         if min_price:
-            services = services.filter(price__gte=min_price)
-        if max_price:
-            services = services.filter(price__lte=max_price)
+            try:
+                min_price = float(min_price)  
+                services = services.filter(price__gte=min_price)
+            except ValueError:
+                return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Теперь код считает, что пользователь авторизован
-        draft_order = DatacenterOrder.objects.filter(creator=request.user, status='draft').first()
-        draft_order_id = draft_order.id if draft_order else None
+        if max_price:
+            try:
+                max_price = float(max_price)  
+                services = services.filter(price__lte=max_price)
+            except ValueError:
+                return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
+
+        
+        draft_order, created = DatacenterOrder.objects.get_or_create(
+            creator=mock_user,
+            status='draft'
+        )
+
+        
+        draft_order_id = draft_order.id
 
         services_list = self.get_serializer(services, many=True).data
 
@@ -78,16 +86,13 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         new_service = serializer.save()
 
-        # Проверка на наличие изображения и его добавление только если оно предоставлено
+        
         if 'image' in request.FILES:
             image = request.FILES['image']
-
-        # Добавление изображения через minio.py
             response = add_pic(new_service, image)
             if response.status_code != status.HTTP_200_OK:
                 return response
 
-    # Возвращаем данные новой услуги
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # 4. PUT: Обновление услуги с изображением
@@ -95,32 +100,30 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()  # Получаем объект услуги для обновления
 
-    # Валидируем входные данные
+       
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         updated_service = serializer.save()
 
-        # Проверяем, предоставлено ли новое изображение
+        
         if 'image' in request.FILES:
             image = request.FILES['image']
-
-            # Добавление/замена изображения через minio.py
             response = add_pic(updated_service, image)
             if isinstance(response, Response) and response.status_code != status.HTTP_200_OK:
-                return response  # Вернуть ошибку, если загрузка не удалась
+                return response  
 
-            # Проверяем результат от add_pic, заменяем URL изображения
+            
             if isinstance(response.data, dict) and "image_url" in response.data:
                 updated_service.image_url = response.data["image_url"]
                 updated_service.save()
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # 5. DELETE: Удаление услуги (можно переопределить, если нужно)
+    # 5. DELETE: Удаление услуги
     def destroy(self, request, pk=None):
         service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
 
-        # Удаление изображения из MinIO
+        
         if service.image_url:
             client = Minio(
                 endpoint=settings.AWS_S3_ENDPOINT_URL,
@@ -129,7 +132,7 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
                 secure=settings.MINIO_USE_SSL
             )
             try:
-                client.remove_object('something', f"{service.id}.png")  # Предполагается, что имя объекта соответствует ID
+                client.remove_object('something', f"{service.id}.png")  
             except Exception as e:
                 return Response({'error': str(e)}, status=400)
 
@@ -141,19 +144,28 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
     # 6. POST: Добавление услуги в черновик заказа
     @action(detail=True, methods=['post'], url_path='add-to-draft')
     def add_to_draft(self, request, pk=None):
-        # Получаем услугу по pk
+        
         service = get_object_or_404(DatacenterService, id=pk)
 
-        # Если пользователь аутентифицирован, получаем или создаем черновик заказа
-        if request.user.is_authenticated:
-            draft_order, created = DatacenterOrder.objects.get_or_create(creator=request.user, status='draft')
-        else:
-            # Используем временного пользователя (например, с ID 3)
-            draft_order, created = DatacenterOrder.objects.get_or_create(creator_id=3, status='draft')
+        
+        try:
+            mock_user = self.get_current_user()
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Получаем или создаем услугу в черновике
-        order_service, created = DatacenterOrderService.objects.get_or_create(order=draft_order, service=service)
+        
+        draft_order, created = DatacenterOrder.objects.get_or_create(
+            creator=mock_user,
+            status='draft'
+        )
 
+        
+        order_service, created = DatacenterOrderService.objects.get_or_create(
+            order=draft_order, 
+            service=service
+        )
+
+        
         if created:
             order_service.quantity = 1
         else:
@@ -161,13 +173,17 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
             
         order_service.save()
 
-        # Пересчитываем общую стоимость черновика
-        draft_order.calculate_total_price()
+       
+        draft_order.total_price = sum(order_service.quantity * order_service.service.price for order_service in draft_order.datacenterorderservice_set.all())
+        draft_order.save()
+
         
-        # Сериализуем черновик заказа
         serializer = DatacenterOrderSerializer(draft_order)
 
-        return Response({'message': 'Service added to draft order', 'draft_order': serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(
+            {'message': 'Услуга добавлена в черновик заказа', 'draft_order': serializer.data}, 
+            status=status.HTTP_201_CREATED
+        )
 
     # 7. POST: Добавление или замена изображения услуги
     @action(detail=True, methods=['post'], url_path='add-image')
@@ -179,7 +195,7 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
 
         image = request.FILES['image']
 
-        # Добавление изображения через minio.py
+        
         response = add_pic(service, image)
         if response.status_code != 200:
             return response
@@ -190,23 +206,27 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
 
     # 8. GET: Список заявок с фильтрацией
     def list(self, request):
-        # Получаем параметры фильтрации с префиксом "datacenter"
+        
+        moderator = get_mock_user()
+
+        
         status_filter = request.GET.get('datacenter_status')
         start_date = request.GET.get('datacenter_start_date')
         end_date = request.GET.get('datacenter_end_date')
 
-        orders = DatacenterOrder.objects.all()  # Получаем все заказы
+        
+        orders = DatacenterOrder.objects.exclude(status='deleted')
 
         if status_filter:
-            orders = orders.filter(status=status_filter)  # Фильтруем по статусу
+            orders = orders.filter(status=status_filter)  
 
         if start_date and end_date:
             try:
                 start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
                 end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
-                orders = orders.filter(creation_date__range=[start_date, end_date])  # Фильтруем по дате
+                orders = orders.filter(creation_date__range=[start_date, end_date])  
             except ValueError:
-                return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=400)
+                return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = DatacenterOrderSerializer(orders, many=True)
         return Response({'orders': serializer.data})
@@ -234,19 +254,17 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
         }
 
         return Response(response)
+    
    # 10. PUT: Обновление полей заявки
     def update(self, request, pk=None):
         order = get_object_or_404(DatacenterOrder, id=pk)
 
-        # Инициализируем сериализатор с данными запроса
         serializer = DatacenterOrderSerializer(order, data=request.data, partial=True)
 
         if serializer.is_valid():
-            serializer.save()  # Сохраняем изменения
-            logger.debug(f'Заказ {order.id} успешно обновлен.')
+            serializer.save()
             return Response({'message': 'Order updated successfully', 'order_id': order.id}, status=status.HTTP_200_OK)
         
-        logger.error(f'Ошибка обновления заказа {order.id}: {serializer.errors}')
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     # 11. PUT: Отправка заявки (отдельный маршрут)
@@ -254,11 +272,15 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
     def submit_order(self, request, pk=None):
         order = get_object_or_404(DatacenterOrder, id=pk)
 
-         # Проверка на наличие необходимых полей
+       
+        creator = get_mock_user()  
+
+        
+        
         if order.delivery_address is None or order.delivery_time is None:
             return Response({'error': 'Необходимо указать адрес доставки и время.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Обновляем статус
+       
         order.status = 'formed'
         order.save()
 
@@ -271,48 +293,53 @@ class DatacenterOrderViewSet(viewsets.ViewSet):
 
         action = request.data.get('action')
 
-        # Проверка на наличие действия
         if not action:
-           return Response({'error': 'Missing action parameter'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Missing action parameter'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Обновление статуса в зависимости от действия
+        
+        creator = get_mock_user()
+
+       
         if action == 'completed':
             order.status = 'completed'
+            order.completion_date = timezone.now()  
         elif action == 'rejected':
-              order.status = 'rejected'
+            order.status = 'rejected'
+            order.completion_date = timezone.now()  
         else:
             return Response({'error': 'Invalid action provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-     # Сохранение изменений в базе данных
         order.save()
         return Response({'message': f'Order {action}d successfully'}, status=status.HTTP_200_OK)
 
-    # 13. DELETE: Удаление заявки
+        # 13. DELETE: Удаление заявки
     def destroy(self, request, pk=None):
         order = get_object_or_404(DatacenterOrder, id=pk)
 
-        order.status = 'deleted'
+        
+        order.status = 'deleted'  
         order.save()
+
         return Response({'message': 'Order deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 
 class ServiceOrderViewSet(viewsets.ViewSet):
     # 14. DELETE: Удаление услуги из заявки
     def destroy(self, request, order_id, service_id):
-        # Получите заказ по идентификатору заказа
+        
         order = get_object_or_404(DatacenterOrder, id=order_id)
 
-        # Проверка, не удален ли заказ
+        
         if order.status == 'deleted':
             return Response({'error': 'Заказ удален, нельзя удалить услуги'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Получите услугу по идентификатору услуги
+        
         service = get_object_or_404(DatacenterService, id=service_id)
 
-        # Получите связь между заказом и услугой
+       
         order_service = DatacenterOrderService.objects.filter(order=order, service=service).first()
 
-        # Если услуга найдена, удалите ее
+        
         if order_service:
             order_service.delete()
             return Response({'message': 'Услуга удалена из заказа'}, status=status.HTTP_204_NO_CONTENT)
@@ -356,22 +383,25 @@ class UserViewSet(viewsets.ViewSet):
         password = data.get('password')
         email = data.get('email')
 
+        
         if User.objects.filter(username=username).exists():
             return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Проверка формата email
+        
         if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
             return Response({'error': 'Invalid email format'}, status=status.HTTP_400_BAD_REQUEST)
 
+       
         user = User.objects.create_user(username=username, password=password, email=email)
         return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
 
     # 17. PUT: Обновление информации о пользователе
     @action(detail=True, methods=['put'], url_path='update')
     def update_user(self, request, pk=None):
-        user = get_object_or_404(User, id=pk)  # Получаем пользователя по ID
+        user = get_object_or_404(User, id=pk)  
         data = request.data
 
+        
         user.username = data.get('username', user.username)
         user.email = data.get('email', user.email)
         if 'password' in data:
@@ -387,6 +417,7 @@ class UserViewSet(viewsets.ViewSet):
         username = data.get('username')
         password = data.get('password')
 
+        
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
