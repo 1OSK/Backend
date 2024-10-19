@@ -1,7 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import  DatacenterOrderViewSet, ServiceOrderViewSet, UserViewSet
-from .views import DatacenterServiceAPIView, DatacenterOrderView
+from .views import DatacenterServiceAPIView, DatacenterOrderView, ServiceOrderView, UserView
 
 
 urlpatterns = [
@@ -24,4 +23,11 @@ urlpatterns = [
     path('orders/<int:pk>/finalize/', DatacenterOrderView.as_view(), name='order-finalize'),  # PUT: завершение заказа
     path('orders/<int:pk>/update/', DatacenterOrderView.as_view(), name='order-update'),  # PUT: обновление заказа
     path('orders/<int:pk>/delete/', DatacenterOrderView.as_view(), name='order-delete'),  # DELETE: удаление заказа
+    
+    path('orders/<int:order_id>/services/<int:service_id>/', ServiceOrderView.as_view(), name='service-order'),
+    
+    path('users/register/', UserView.as_view({'post': 'register'}), name='user-register'),  # Регистрация пользователя
+    path('users/update/<int:pk>/', UserView.as_view({'put': 'update_user'}), name='user-update'),  # Обновление информации о пользователе
+    path('users/login/', UserView.as_view({'post': 'login_user'}), name='user-login'),  # Вход пользователя
+    path('users/logout/', UserView.as_view({'post': 'logout_user'}), name='user-logout'),  # Выход пользователя
 ]
