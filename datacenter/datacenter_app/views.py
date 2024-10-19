@@ -105,8 +105,14 @@ class DatacenterServiceAPIView(APIView):
 
     # 4. DELETE: Удаление услуги
     def delete(self, request, pk):
-        service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
+        # Получаем услугу, игнорируя те, которые имеют статус 'удалена'
+        service = get_object_or_404(self.queryset, id=pk)
 
+        # Проверяем, была ли услуга уже удалена
+        if service.status == 'удалена':
+            return Response({'error': 'Эта услуга уже была удалена.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Проверяем, есть ли у услуги изображение и удаляем его из Minio
         if service.image_url:
             client = Minio(
                 endpoint=settings.AWS_S3_ENDPOINT_URL,
@@ -115,14 +121,17 @@ class DatacenterServiceAPIView(APIView):
                 secure=settings.MINIO_USE_SSL
             )
             try:
+                # Удаляем изображение из хранилища
                 client.remove_object('something', f"{service.id}.png")  
             except Exception as e:
-                return Response({'error': str(e)}, status=400)
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Меняем статус услуги на 'удалена'
         service.status = 'удалена'
         service.save()
 
-        return Response({'message': 'Service deleted successfully'})
+        # Возвращаем успешный ответ
+        return Response({'message': 'Услуга успешно удалена'}, status=status.HTTP_200_OK)
 
 
     def post_add_to_draft(self, request, pk):
@@ -199,12 +208,16 @@ class DatacenterServiceAPIView(APIView):
             return Response(response_data, status=status.HTTP_201_CREATED)
 
     def post_add_image(self, request, pk):
-        # Получаем услугу по ID
-        service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
+        # Получаем услугу по ID, исключая те, которые имеют статус 'удалена'
+        service = get_object_or_404(self.queryset, id=pk)
+
+        # Проверка, что услуга не была удалена
+        if service.status == 'удалена':
+            return Response({'error': 'Нельзя добавлять изображение к удаленной услуге.'}, status=400)
 
         # Проверка наличия изображения в запросе
         if 'image' not in request.FILES:
-            return Response({'error': 'No image provided'}, status=400)
+            return Response({'error': 'Изображение не предоставлено'}, status=400)
 
         image = request.FILES['image']
 
@@ -223,7 +236,7 @@ class DatacenterServiceAPIView(APIView):
         serializer = DatacenterServiceImageSerializer(service)
 
         return Response({
-            'message': 'Image added/updated successfully',
+            'message': 'Изображение успешно добавлено или обновлено',
             'service': serializer.data  # Используем сериализованные данные
         }, status=200)
         
