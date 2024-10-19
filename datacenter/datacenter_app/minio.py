@@ -20,15 +20,15 @@ def add_pic(new_stock, pic):
     )
     
     if not pic:
-        return Response({"error": "Нет файла для изображения."})
+        return {"error": "Нет файла для изображения."}
 
     img_obj_name = f"{new_stock.id}.png"
     result = process_file_upload(pic, client, img_obj_name)
 
     if 'error' in result:
-        return Response(result)
+        return {"error": result["error"]}  # Вернуть только текст ошибки
 
-    new_stock.image_url = result  # или new_stock.url, в зависимости от вашего поля
+    new_stock.image_url = result  # Сохраняем URL изображения в поле image_url
     new_stock.save()
 
-    return Response({"message": "Изображение успешно загружено."})
+    return {"message": "Изображение успешно загружено.", "image_url": result} 

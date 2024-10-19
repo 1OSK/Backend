@@ -20,3 +20,8 @@ class AuthUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuthUser
         fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'is_staff', 'is_superuser', 'date_joined']
+        
+class DatacenterServiceImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DatacenterService
+        fields = ['image_url']  # Только поле image_url

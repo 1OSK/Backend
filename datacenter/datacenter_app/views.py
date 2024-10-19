@@ -11,119 +11,102 @@ from rest_framework import status
 from django.contrib.auth import authenticate, login, logout
 from .singleton import get_mock_user
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
-from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer
+from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer, DatacenterServiceImageSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 
-class DatacenterServiceViewSet(viewsets.ModelViewSet):
+class DatacenterServiceAPIView(APIView):
     queryset = DatacenterService.objects.all()
     serializer_class = DatacenterServiceSerializer
-
     def get_current_user(self):
         """Получаем текущего пользователя (мокового пользователя)"""
         mock_user = get_mock_user()
-
         
         if not isinstance(mock_user, User):
             raise ValueError("Неверный пользователь")
 
         return mock_user
+    def get_queryset(self):
+            return self.queryset.exclude(status='удалена')
 
-    def list(self, request):
+    def get(self, request, pk=None):
+            if pk:
+                return self.get_service_detail(request, pk)
+            else:
+                return self.get_service_list(request)
+
+    def get_service_detail(self, request, pk):
+            # Получаем конкретную услугу по ID
+            service = get_object_or_404(self.get_queryset(), id=pk)
+            service_data = self.serializer_class(service).data
+            return Response(service_data)
+
+    def get_service_list(self, request):
         try:
             mock_user = self.get_current_user()
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        
         min_price = request.GET.get('datacenter_min_price')
         max_price = request.GET.get('datacenter_max_price')
 
-        services = self.queryset
+        services = self.get_queryset()  # Получаем все доступные услуги
 
-        
+        # Фильтрация по минимальной цене
         if min_price:
             try:
-                min_price = float(min_price)  
+                min_price = float(min_price)
                 services = services.filter(price__gte=min_price)
             except ValueError:
                 return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Фильтрация по максимальной цене
         if max_price:
             try:
-                max_price = float(max_price)  
+                max_price = float(max_price)
                 services = services.filter(price__lte=max_price)
             except ValueError:
                 return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-        
-        draft_order, created = DatacenterOrder.objects.get_or_create(
-            creator=mock_user,
-            status='draft'
-        )
+        # Поиск черновика заказа
+        draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
 
-        
-        draft_order_id = draft_order.id
+        if draft_order:
+            # Если черновик существует, подсчитываем общее количество услуг в нем
+            services_count = sum(order_service.quantity for order_service in draft_order.datacenterorderservice_set.all())
+            draft_order_id = draft_order.id
+        else:
+            services_count = 0  # Если черновика нет, количество услуг 0
+            draft_order_id = None  # Устанавливаем id в None, если черновик не найден
 
-        services_list = self.get_serializer(services, many=True).data
+        services_list = self.serializer_class(services, many=True).data
 
         response_data = {
             'services': services_list,
-            'draft_order_id': draft_order_id
+            'draft_order_id': draft_order_id,
+            'services_count': services_count  # Возвращаем общее количество услуг в черновике
         }
 
         return Response(response_data)
 
-    # 2. GET: Получение информации об одной услуге
-    def retrieve(self, request, pk=None):
-        service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
-        service_data = self.get_serializer(service).data
-        return Response(service_data)
 
-    # 3. POST: Создание новой услуги с изображением
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        new_service = serializer.save()
 
+    # 3. PUT: Обновление услуги без изображения
+    def put(self, request, pk):
+        partial = request.method == 'PATCH'
+        instance = get_object_or_404(self.queryset, pk=pk)
         
-        if 'image' in request.FILES:
-            image = request.FILES['image']
-            response = add_pic(new_service, image)
-            if response.status_code != status.HTTP_200_OK:
-                return response
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    # 4. PUT: Обновление услуги с изображением
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()  # Получаем объект услуги для обновления
-
-       
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.serializer_class(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         updated_service = serializer.save()
 
-        
-        if 'image' in request.FILES:
-            image = request.FILES['image']
-            response = add_pic(updated_service, image)
-            if isinstance(response, Response) and response.status_code != status.HTTP_200_OK:
-                return response  
-
-            
-            if isinstance(response.data, dict) and "image_url" in response.data:
-                updated_service.image_url = response.data["image_url"]
-                updated_service.save()
-
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # 5. DELETE: Удаление услуги
-    def destroy(self, request, pk=None):
+    # 4. DELETE: Удаление услуги
+    def delete(self, request, pk):
         service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
 
-        
         if service.image_url:
             client = Minio(
                 endpoint=settings.AWS_S3_ENDPOINT_URL,
@@ -141,66 +124,110 @@ class DatacenterServiceViewSet(viewsets.ModelViewSet):
 
         return Response({'message': 'Service deleted successfully'})
 
-    # 6. POST: Добавление услуги в черновик заказа
-    @action(detail=True, methods=['post'], url_path='add-to-draft')
-    def add_to_draft(self, request, pk=None):
-        
+
+    def post_add_to_draft(self, request, pk):
         service = get_object_or_404(DatacenterService, id=pk)
 
-        
         try:
             mock_user = self.get_current_user()
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        
+        # Создаем черновик заказа, если его нет
         draft_order, created = DatacenterOrder.objects.get_or_create(
             creator=mock_user,
             status='draft'
         )
 
-        
+        # Получаем или создаем связь между заказом и услугой
         order_service, created = DatacenterOrderService.objects.get_or_create(
             order=draft_order, 
-            service=service
+            service=service,
+            defaults={'quantity': 0}  # Убедитесь, что количество начинает с 0
         )
 
-        
+        # Если связь была создана, устанавливаем quantity в 1, иначе увеличиваем на 1
         if created:
             order_service.quantity = 1
         else:
             order_service.quantity += 1
-            
-        order_service.save()
 
-       
-        draft_order.total_price = sum(order_service.quantity * order_service.service.price for order_service in draft_order.datacenterorderservice_set.all())
+        # Сохраняем изменения
+        print(f"Количество услуг перед сохранением: {order_service.quantity}")
+        order_service.save()
+        print(f"Количество услуг после сохранения: {order_service.quantity}")
+
+        # Обновляем общую стоимость черновика
+        draft_order.total_price = sum(
+            order_service.quantity * order_service.service.price
+            for order_service in draft_order.datacenterorderservice_set.all()
+        )
         draft_order.save()
 
-        
+        # Подсчет общего количества услуг в черновике
+        services_count = sum(service.quantity for service in draft_order.datacenterorderservice_set.all())
+
+        # Сериализация черновика заказа для ответа
         serializer = DatacenterOrderSerializer(draft_order)
 
         return Response(
-            {'message': 'Услуга добавлена в черновик заказа', 'draft_order': serializer.data}, 
+            {
+                'message': 'Услуга добавлена в черновик заказа',
+                'draft_order': serializer.data,
+                'services_count': services_count  # Возвращаем общее количество услуг в черновике
+            },
             status=status.HTTP_201_CREATED
         )
+    
+    def post(self, request, pk=None):
+        # Проверяем, если запрос идет на добавление изображения
+        if request.path.endswith('/add-image/'):
+            return self.post_add_image(request, pk)
 
-    # 7. POST: Добавление или замена изображения услуги
-    @action(detail=True, methods=['post'], url_path='add-image')
-    def add_image(self, request, pk=None):
+        # Проверяем, если запрос идет на добавление услуги в черновик заказа
+        elif request.path.endswith('/add-to-draft/'):
+            return self.post_add_to_draft(request, pk)
+
+        else:
+            # Логика для создания новой услуги
+            serializer = self.serializer_class(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            new_service = serializer.save()
+
+            # Сериализуем и возвращаем данные новой услуги
+            response_data = self.serializer_class(new_service).data  # Сериализуем новую услугу
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+    def post_add_image(self, request, pk):
+        # Получаем услугу по ID
         service = get_object_or_404(self.queryset.exclude(status='удалена'), id=pk)
 
+        # Проверка наличия изображения в запросе
         if 'image' not in request.FILES:
             return Response({'error': 'No image provided'}, status=400)
 
         image = request.FILES['image']
 
-        
-        response = add_pic(service, image)
-        if response.status_code != 200:
-            return response
+        # Загрузка изображения с использованием Minio
+        result = add_pic(service, image)
 
-        return Response({'message': 'Image added/updated successfully'})
+        # Проверка на успешность загрузки
+        if 'error' in result:
+            return Response({'error': result['error']}, status=400)  # Возвращаем ошибку
+
+        # Обновляем поле image_url после успешной загрузки
+        service.image_url = result['image_url']  # Получаем URL изображения
+        service.save()  # Сохраняем изменения в базе данных
+
+        # Создаем экземпляр сериализатора для обновленного сервиса
+        serializer = DatacenterServiceImageSerializer(service)
+
+        return Response({
+            'message': 'Image added/updated successfully',
+            'service': serializer.data  # Используем сериализованные данные
+        }, status=200)
+        
+    
 
 class DatacenterOrderViewSet(viewsets.ViewSet):
 
