@@ -431,4 +431,10 @@ class UserViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'], url_path='logout')
     def logout_user(self, request):
         logout(request)
+<<<<<<< Updated upstream
         return Response({'message': 'User logged out successfully'}, status=status.HTTP_200_OK)
+=======
+        return Response({'message': 'Пользователь успешно вышел из системы'}, status=status.HTTP_200_OK)
+    
+    
+>>>>>>> Stashed changes

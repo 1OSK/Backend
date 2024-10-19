@@ -19,4 +19,14 @@ class DatacenterOrderServiceSerializer(serializers.ModelSerializer):
 class AuthUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuthUser
+<<<<<<< Updated upstream
         fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'is_staff', 'is_superuser', 'date_joined']
+=======
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'is_staff', 'is_superuser', 'date_joined']
+        
+class DatacenterServiceImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DatacenterService
+        fields = ['image_url']  # Только поле image_url
+        
+>>>>>>> Stashed changes

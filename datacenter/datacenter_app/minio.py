@@ -31,4 +31,8 @@ def add_pic(new_stock, pic):
     new_stock.image_url = result  # или new_stock.url, в зависимости от вашего поля
     new_stock.save()
 
+<<<<<<< Updated upstream
     return Response({"message": "Изображение успешно загружено."})
+=======
+    return {"message": "Изображение успешно загружено.", "image_url": result} 
+>>>>>>> Stashed changes
