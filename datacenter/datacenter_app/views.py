@@ -227,7 +227,184 @@ class DatacenterServiceAPIView(APIView):
             'service': serializer.data  # Используем сериализованные данные
         }, status=200)
         
-    
+class DatacenterOrderView(APIView):
+
+    def get(self, request, pk=None):
+        if pk is not None:
+            return self.retrieve(request, pk)
+        else:
+            return self.list(request)
+
+    # 8. GET: Список заявок с фильтрацией
+    def list(self, request):
+        moderator = get_mock_user()
+        status_filter = request.GET.get('datacenter_status')
+        start_date = request.GET.get('datacenter_start_date')
+        end_date = request.GET.get('datacenter_end_date')
+
+        # Исключаем заявки со статусом 'deleted' и 'draft'
+        orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
+
+        if status_filter:
+            orders = orders.filter(status=status_filter)
+
+        if start_date and end_date:
+            try:
+                start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
+                end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
+                orders = orders.filter(creation_date__range=[start_date, end_date])
+            except ValueError:
+                return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = DatacenterOrderSerializer(orders, many=True)
+        return Response({'orders': serializer.data})
+
+    # 9. GET: Получение информации о заявке
+    def retrieve(self, request, pk=None):
+        order = get_object_or_404(DatacenterOrder, id=pk)
+
+        if order.status == 'deleted':
+            return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        services = order.datacenterorderservice_set.all()
+        service_serializer = DatacenterOrderServiceSerializer(services, many=True)
+
+        response = {
+            'order_id': order.id,
+            'status': order.status,
+            'creation_date': order.creation_date,
+            'formation_date': order.formation_date,
+            'completion_date': order.completion_date,
+            'delivery_address': order.delivery_address,
+            'delivery_time': order.delivery_time,
+            'total_price': order.total_price,
+            'services': service_serializer.data,
+        }
+
+        return Response(response)
+
+    def put(self, request, pk=None):
+        if pk is not None:
+            # Определяем действие на основе пути
+            if request.path.endswith('/submit/'):
+                return self.submit_order(request, pk)
+            elif request.path.endswith('/finalize/'):
+                return self.finalize_order(request, pk)
+            elif request.path.endswith('/update/'):
+                return self.update(request, pk)
+            else:
+                return Response({'error': 'Неизвестное действие'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({'error': 'ID заявки не указан'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 10. PUT: Обновление полей заявки
+    def update(self, request, pk=None):
+        try:
+            order = DatacenterOrder.objects.get(id=pk)
+        except DatacenterOrder.DoesNotExist:
+            return Response({'error': 'Заявка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Проверяем, является ли заявка удалённой
+        if order.status == 'deleted':
+            return Response({'error': 'Обновление удалённых заявок невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = DatacenterOrderSerializer(order, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': 'Заказ обновлён успешно', 'order_id': order.id}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # 11. PUT: Отправка заявки (отдельный маршрут)
+    def submit_order(self, request, pk=None):
+        print(f"Отправка заказа с ID: {pk}")
+        order = get_object_or_404(DatacenterOrder, id=pk)
+
+        # Проверка статуса заказа
+        if order.status != 'draft':
+            return Response({'error': 'Заказ уже был отправлен или не в состоянии для отправки.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Извлекаем адрес и время доставки из полей заявки
+        delivery_address = order.delivery_address
+        delivery_time = order.delivery_time
+
+        # Проверяем, что адрес и время доставки указаны
+        if not delivery_address:
+            return Response({'error': 'Адрес доставки не указан в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not delivery_time:
+            return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        print(f"Текущий статус перед изменением: {order.status}")
+
+        # Изменяем статус на 'formed' и устанавливаем дату формирования
+        order.status = 'formed'
+        order.formation_date = timezone.now()  # Устанавливаем дату формирования
+
+        try:
+            order.save()  # Сохраняем изменения
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Сериализуем обновленный объект заказа
+        serializer = DatacenterOrderSerializer(order)
+        print(f"Новый статус после изменения: {order.status}")
+
+        return Response({'message': 'Заказ успешно отправлен', 'order': serializer.data}, status=status.HTTP_200_OK)
+
+    # 12. PUT: Завершение или отклонение заявки
+    def finalize_order(self, request, pk=None):
+        order = get_object_or_404(DatacenterOrder, id=pk)
+
+        # Проверяем, удалена ли заявка
+        if order.status == 'deleted':
+            return Response({'error': 'Заявка удалена и не может быть завершена или отклонена.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        action = request.data.get('action')
+
+        if not action:
+            return Response({'error': 'Параметр action не указан.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Получаем создателя и модератора из моковых пользователей
+        moderator = get_mock_user()
+
+        # Проверка, является ли текущий пользователь создателем или модератором
+        if request.user.id not in [moderator.id]:
+            return Response({'error': 'У вас нет прав для выполнения этого действия.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if action == 'completed':
+            order.status = 'completed'
+            order.completion_date = timezone.now()
+        elif action == 'rejected':
+            order.status = 'rejected'
+            order.completion_date = timezone.now()
+        else:
+            return Response({'error': 'Некорректное значение параметра action.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            order.save()
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'message': f'Заявка успешно {action}.'}, status=status.HTTP_200_OK)
+
+    # 13. DELETE: Удаление заявки
+    def delete(self, request, pk=None):
+        order = get_object_or_404(DatacenterOrder, id=pk)
+
+        # Проверяем, удалена ли заявка
+        if order.status == 'deleted':
+            return Response({'error': 'Заявка уже удалена и не может быть удалена повторно.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = 'deleted'
+        
+        try:
+            order.save()
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'message': 'Заявка успешно удалена.'}, status=status.HTTP_204_NO_CONTENT)  
 
 class DatacenterOrderViewSet(viewsets.ViewSet):
 
