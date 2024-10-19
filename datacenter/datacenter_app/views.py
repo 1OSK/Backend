@@ -279,22 +279,9 @@ class DatacenterOrderView(APIView):
         if order.status == 'deleted':
             return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
-        services = order.datacenterorderservice_set.all()
-        service_serializer = DatacenterOrderServiceSerializer(services, many=True)
-
-        response = {
-            'order_id': order.id,
-            'status': order.status,
-            'creation_date': order.creation_date,
-            'formation_date': order.formation_date,
-            'completion_date': order.completion_date,
-            'delivery_address': order.delivery_address,
-            'delivery_time': order.delivery_time,
-            'total_price': order.total_price,
-            'services': service_serializer.data,
-        }
-
-        return Response(response)
+        # Используем сериализатор заявки
+        serializer = DatacenterOrderSerializer(order)
+        return Response(serializer.data)
 
     def put(self, request, pk=None):
         if pk is not None:
