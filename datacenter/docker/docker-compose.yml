@@ -73,6 +73,14 @@ services:
     ports:
       - "5434:5432" # Прокидывание порта 5434 на локальную машину
 
+  # Redis service
+  redis:
+    image: redis:6
+    hostname: redis
+    ports:
+      - "6379:6379" # Прокидывание порта 6379 на локальную машину
+    volumes:
+      - redis_data:/data # Опционально, если хотите сохранить данные Redis
 # Определение томов для хранения данных
 volumes:
   data1-1:
@@ -84,3 +92,4 @@ volumes:
   data4-1:
   data4-2:
   postgres_data: # Том для PostgreSQL данных
+  redis_data:
