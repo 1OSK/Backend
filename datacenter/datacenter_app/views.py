@@ -16,33 +16,34 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 
+
+def get_current_user():
+    """Получаем текущего пользователя (мокового пользователя)"""
+    mock_user = get_mock_user()
+
+    if not isinstance(mock_user, User):
+        raise ValueError("Неверный пользователь")
+
+    return mock_user
+
+
+def get_filtered_queryset(queryset):
+    return queryset.exclude(status='удалена')
+
 class DatacenterServiceAPIView(APIView):
     queryset = DatacenterService.objects.all()
     serializer_class = DatacenterServiceSerializer
-    def get_current_user(self):
-        """Получаем текущего пользователя (мокового пользователя)"""
-        mock_user = get_mock_user()
-        
-        if not isinstance(mock_user, User):
-            raise ValueError("Неверный пользователь")
-
-        return mock_user
-    def get_queryset(self):
-            return self.queryset.exclude(status='удалена')
-
+    #1
     def get(self, request, pk=None):
-            if pk:
-                return self.get_service_detail(request, pk)
-            else:
-                return self.get_service_list(request)
-
-    def get_service_detail(self, request, pk):
+        if pk:
             # Получаем конкретную услугу по ID
-            service = get_object_or_404(self.get_queryset(), id=pk)
-            service_data = self.serializer_class(service).data
-            return Response(service_data)
-
-    def get_service_list(self, request):
+            datacenter_service = get_object_or_404(self.get_queryset(), id=pk)
+            datacenter_service_data = self.serializer_class(datacenter_service).data
+            return Response(datacenter_service_data)
+        else:
+            return self.get_datacenter_service_list(request)
+    #2
+    def get_datacenter_service_list(self, request):
         try:
             mock_user = self.get_current_user()
         except ValueError as e:
@@ -51,13 +52,13 @@ class DatacenterServiceAPIView(APIView):
         min_price = request.GET.get('datacenter_min_price')
         max_price = request.GET.get('datacenter_max_price')
 
-        services = self.get_queryset()  # Получаем все доступные услуги
+        datacenter_services = self.get_queryset()  # Получаем все доступные услуги
 
         # Фильтрация по минимальной цене
         if min_price:
             try:
                 min_price = float(min_price)
-                services = services.filter(price__gte=min_price)
+                datacenter_services = datacenter_services.filter(price__gte=min_price)
             except ValueError:
                 return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -65,55 +66,64 @@ class DatacenterServiceAPIView(APIView):
         if max_price:
             try:
                 max_price = float(max_price)
-                services = services.filter(price__lte=max_price)
+                datacenter_services = datacenter_services.filter(price__lte=max_price)
             except ValueError:
                 return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Поиск черновика заказа
-        draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
+        datacenter_draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
 
-        if draft_order:
+        if datacenter_draft_order:
             # Если черновик существует, подсчитываем общее количество услуг в нем
-            services_count = sum(order_service.quantity for order_service in draft_order.datacenterorderservice_set.all())
-            draft_order_id = draft_order.id
+            datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
+            datacenter_draft_order_id = datacenter_draft_order.id
         else:
-            services_count = 0  # Если черновика нет, количество услуг 0
-            draft_order_id = None  # Устанавливаем id в None, если черновик не найден
+            datacenter_services_count = 0  # Если черновика нет, количество услуг 0
+            datacenter_draft_order_id = None  # Устанавливаем id в None, если черновик не найден
 
-        services_list = self.serializer_class(services, many=True).data
+        datacenter_services_list = self.serializer_class(datacenter_services, many=True).data
 
         response_data = {
-            'services': services_list,
-            'draft_order_id': draft_order_id,
-            'services_count': services_count  # Возвращаем общее количество услуг в черновике
+            'services': datacenter_services_list,
+            'draft_order_id': datacenter_draft_order_id,
+            'services_count': datacenter_services_count  # Возвращаем общее количество услуг в черновике
         }
 
         return Response(response_data)
 
-
-
     # 3. PUT: Обновление услуги без изображения
     def put(self, request, pk):
-        partial = request.method == 'PATCH'
+        # Получаем объект услуги по его ID или возвращаем 404
         instance = get_object_or_404(self.queryset, pk=pk)
-        
-        serializer = self.serializer_class(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        updated_service = serializer.save()
 
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Создаем сериализатор, передавая данные запроса (полное обновление)
+        serializer = self.serializer_class(instance, data=request.data)
+
+        # Проверяем валидность данных
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            # Сохраняем обновленную услугу
+            updated_datacenter_service = serializer.save()
+
+            # Возвращаем обновленные данные услуги
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            # Возвращаем ошибку в случае проблем с сохранением
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     # 4. DELETE: Удаление услуги
     def delete(self, request, pk):
         # Получаем услугу, игнорируя те, которые имеют статус 'удалена'
-        service = get_object_or_404(self.queryset, id=pk)
+        datacenter_service = get_object_or_404(self.queryset, id=pk)
 
         # Проверяем, была ли услуга уже удалена
-        if service.status == 'удалена':
+        if datacenter_service.status == 'удалена':
             return Response({'error': 'Эта услуга уже была удалена.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Проверяем, есть ли у услуги изображение и удаляем его из Minio
-        if service.image_url:
+        if datacenter_service.image_url:
             client = Minio(
                 endpoint=settings.AWS_S3_ENDPOINT_URL,
                 access_key=settings.AWS_ACCESS_KEY_ID,
@@ -122,20 +132,19 @@ class DatacenterServiceAPIView(APIView):
             )
             try:
                 # Удаляем изображение из хранилища
-                client.remove_object('something', f"{service.id}.png")  
+                client.remove_object('something', f"{datacenter_service.id}.png")
             except Exception as e:
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Меняем статус услуги на 'удалена'
-        service.status = 'удалена'
-        service.save()
+        datacenter_service.status = 'удалена'
+        datacenter_service.save()
 
         # Возвращаем успешный ответ
         return Response({'message': 'Услуга успешно удалена'}, status=status.HTTP_200_OK)
-
-
+    #5
     def post_add_to_draft(self, request, pk):
-        service = get_object_or_404(DatacenterService, id=pk)
+        datacenter_service = get_object_or_404(DatacenterService, id=pk)
 
         try:
             mock_user = self.get_current_user()
@@ -143,51 +152,51 @@ class DatacenterServiceAPIView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Создаем черновик заказа, если его нет
-        draft_order, created = DatacenterOrder.objects.get_or_create(
+        datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
             creator=mock_user,
             status='draft'
         )
 
         # Получаем или создаем связь между заказом и услугой
-        order_service, created = DatacenterOrderService.objects.get_or_create(
-            order=draft_order, 
-            service=service,
+        datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
+            order=datacenter_draft_order,
+            service=datacenter_service,
             defaults={'quantity': 0}  # Убедитесь, что количество начинает с 0
         )
 
         # Если связь была создана, устанавливаем quantity в 1, иначе увеличиваем на 1
         if created:
-            order_service.quantity = 1
+            datacenter_order_service.quantity = 1
         else:
-            order_service.quantity += 1
+            datacenter_order_service.quantity += 1
 
         # Сохраняем изменения
-        print(f"Количество услуг перед сохранением: {order_service.quantity}")
-        order_service.save()
-        print(f"Количество услуг после сохранения: {order_service.quantity}")
+        print(f"Количество услуг перед сохранением: {datacenter_order_service.quantity}")
+        datacenter_order_service.save()
+        print(f"Количество услуг после сохранения: {datacenter_order_service.quantity}")
 
         # Обновляем общую стоимость черновика
-        draft_order.total_price = sum(
-            order_service.quantity * order_service.service.price
-            for order_service in draft_order.datacenterorderservice_set.all()
+        datacenter_draft_order.total_price = sum(
+            datacenter_order_service.quantity * datacenter_order_service.service.price
+            for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
         )
-        draft_order.save()
+        datacenter_draft_order.save()
 
         # Подсчет общего количества услуг в черновике
-        services_count = sum(service.quantity for service in draft_order.datacenterorderservice_set.all())
+        datacenter_services_count = sum(datacenter_service.quantity for datacenter_service in datacenter_draft_order.datacenterorderservice_set.all())
 
         # Сериализация черновика заказа для ответа
-        serializer = DatacenterOrderSerializer(draft_order)
+        serializer = DatacenterOrderSerializer(datacenter_draft_order)
 
         return Response(
             {
                 'message': 'Услуга добавлена в черновик заказа',
                 'draft_order': serializer.data,
-                'services_count': services_count  # Возвращаем общее количество услуг в черновике
+                'services_count': datacenter_services_count  # Возвращаем общее количество услуг в черновике
             },
             status=status.HTTP_201_CREATED
         )
-    
+    #6
     def post(self, request, pk=None):
         # Проверяем, если запрос идет на добавление изображения
         if request.path.endswith('/add-image/'):
@@ -201,18 +210,18 @@ class DatacenterServiceAPIView(APIView):
             # Логика для создания новой услуги
             serializer = self.serializer_class(data=request.data)
             serializer.is_valid(raise_exception=True)
-            new_service = serializer.save()
+            new_datacenter_service = serializer.save()
 
             # Сериализуем и возвращаем данные новой услуги
-            response_data = self.serializer_class(new_service).data  # Сериализуем новую услугу
+            response_data = self.serializer_class(new_datacenter_service).data  # Сериализуем новую услугу
             return Response(response_data, status=status.HTTP_201_CREATED)
-
+    #7
     def post_add_image(self, request, pk):
         # Получаем услугу по ID, исключая те, которые имеют статус 'удалена'
-        service = get_object_or_404(self.queryset, id=pk)
+        datacenter_service = get_object_or_404(self.queryset, id=pk)
 
         # Проверка, что услуга не была удалена
-        if service.status == 'удалена':
+        if datacenter_service.status == 'удалена':
             return Response({'error': 'Нельзя добавлять изображение к удаленной услуге.'}, status=400)
 
         # Проверка наличия изображения в запросе
@@ -222,18 +231,18 @@ class DatacenterServiceAPIView(APIView):
         image = request.FILES['image']
 
         # Загрузка изображения с использованием Minio
-        result = add_pic(service, image)
+        result = add_pic(datacenter_service, image)
 
         # Проверка на успешность загрузки
         if 'error' in result:
             return Response({'error': result['error']}, status=400)  # Возвращаем ошибку
 
         # Обновляем поле image_url после успешной загрузки
-        service.image_url = result['image_url']  # Получаем URL изображения
-        service.save()  # Сохраняем изменения в базе данных
+        datacenter_service.image_url = result['image_url']  # Получаем URL изображения
+        datacenter_service.save()  # Сохраняем изменения в базе данных
 
         # Создаем экземпляр сериализатора для обновленного сервиса
-        serializer = DatacenterServiceImageSerializer(service)
+        serializer = DatacenterServiceImageSerializer(datacenter_service)
 
         return Response({
             'message': 'Изображение успешно добавлено или обновлено',
@@ -241,93 +250,87 @@ class DatacenterServiceAPIView(APIView):
         }, status=200)
         
 class DatacenterOrderView(APIView):
-
+    #8
     def get(self, request, pk=None):
         if pk is not None:
             return self.retrieve(request, pk)
         else:
-            return self.list(request)
+            moderator = get_mock_user()
+            status_filter = request.GET.get('datacenter_status')
+            start_date = request.GET.get('datacenter_start_date')
+            end_date = request.GET.get('datacenter_end_date')
 
-    # 8. GET: Список заявок с фильтрацией
-    def list(self, request):
-        moderator = get_mock_user()
-        status_filter = request.GET.get('datacenter_status')
-        start_date = request.GET.get('datacenter_start_date')
-        end_date = request.GET.get('datacenter_end_date')
+            # Исключаем заявки со статусом 'deleted' и 'draft'
+            datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
 
-        # Исключаем заявки со статусом 'deleted' и 'draft'
-        orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
+            if status_filter:
+                datacenter_orders = datacenter_orders.filter(status=status_filter)
 
-        if status_filter:
-            orders = orders.filter(status=status_filter)
+            if start_date and end_date:
+                try:
+                    start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
+                    end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
+                    datacenter_orders = datacenter_orders.filter(creation_date__range=[start_date, end_date])
+                except ValueError:
+                    return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if start_date and end_date:
-            try:
-                start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
-                end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
-                orders = orders.filter(creation_date__range=[start_date, end_date])
-            except ValueError:
-                return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = DatacenterOrderSerializer(orders, many=True)
-        return Response({'orders': serializer.data})
+            serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
+            return Response({'datacenter_orders': serializer.data})
 
     # 9. GET: Получение информации о заявке
     def retrieve(self, request, pk=None):
-        order = get_object_or_404(DatacenterOrder, id=pk)
+        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        if order.status == 'deleted':
+        if datacenter_order.status == 'deleted':
             return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # Используем сериализатор заявки
-        serializer = DatacenterOrderSerializer(order)
+        serializer = DatacenterOrderSerializer(datacenter_order)
         return Response(serializer.data)
-
+    #10
     def put(self, request, pk=None):
         if pk is not None:
             # Определяем действие на основе пути
             if request.path.endswith('/submit/'):
-                return self.submit_order(request, pk)
+                return self.submit_datacenter_order(request, pk)
             elif request.path.endswith('/finalize/'):
-                return self.finalize_order(request, pk)
+                return self.finalize_datacenter_order(request, pk)
             elif request.path.endswith('/update/'):
-                return self.update(request, pk)
+                # Логика обновления заявки
+                try:
+                    datacenter_order = DatacenterOrder.objects.get(id=pk)
+                except DatacenterOrder.DoesNotExist:
+                    return Response({'error': 'Заявка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+
+                # Проверяем, является ли заявка удалённой
+                if datacenter_order.status == 'deleted':
+                    return Response({'error': 'Обновление удалённых заявок невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
+
+                serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response({'message': 'Заказ обновлён успешно', 'datacenter_order_id': datacenter_order.id}, status=status.HTTP_200_OK)
+
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
             else:
                 return Response({'error': 'Неизвестное действие'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         return Response({'error': 'ID заявки не указан'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 10. PUT: Обновление полей заявки
-    def update(self, request, pk=None):
-        try:
-            order = DatacenterOrder.objects.get(id=pk)
-        except DatacenterOrder.DoesNotExist:
-            return Response({'error': 'Заявка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Проверяем, является ли заявка удалённой
-        if order.status == 'deleted':
-            return Response({'error': 'Обновление удалённых заявок невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = DatacenterOrderSerializer(order, data=request.data, partial=True)
-
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'message': 'Заказ обновлён успешно', 'order_id': order.id}, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
     # 11. PUT: Отправка заявки (отдельный маршрут)
-    def submit_order(self, request, pk=None):
+    def submit_datacenter_order(self, request, pk=None):
         print(f"Отправка заказа с ID: {pk}")
-        order = get_object_or_404(DatacenterOrder, id=pk)
+        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
         # Проверка статуса заказа
-        if order.status != 'draft':
+        if datacenter_order.status != 'draft':
             return Response({'error': 'Заказ уже был отправлен или не в состоянии для отправки.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Извлекаем адрес и время доставки из полей заявки
-        delivery_address = order.delivery_address
-        delivery_time = order.delivery_time
+        delivery_address = datacenter_order.delivery_address
+        delivery_time = datacenter_order.delivery_time
 
         # Проверяем, что адрес и время доставки указаны
         if not delivery_address:
@@ -336,29 +339,29 @@ class DatacenterOrderView(APIView):
         if not delivery_time:
             return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        print(f"Текущий статус перед изменением: {order.status}")
+        print(f"Текущий статус перед изменением: {datacenter_order.status}")
 
         # Изменяем статус на 'formed' и устанавливаем дату формирования
-        order.status = 'formed'
-        order.formation_date = timezone.now()  # Устанавливаем дату формирования
+        datacenter_order.status = 'formed'
+        datacenter_order.formation_date = timezone.now()  # Устанавливаем дату формирования
 
         try:
-            order.save()  # Сохраняем изменения
+            datacenter_order.save()  # Сохраняем изменения
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Сериализуем обновленный объект заказа
-        serializer = DatacenterOrderSerializer(order)
-        print(f"Новый статус после изменения: {order.status}")
+        serializer = DatacenterOrderSerializer(datacenter_order)
+        print(f"Новый статус после изменения: {datacenter_order.status}")
 
-        return Response({'message': 'Заказ успешно отправлен', 'order': serializer.data}, status=status.HTTP_200_OK)
+        return Response({'message': 'Заказ успешно отправлен', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
 
     # 12. PUT: Завершение или отклонение заявки
-    def finalize_order(self, request, pk=None):
-        order = get_object_or_404(DatacenterOrder, id=pk)
+    def finalize_datacenter_order(self, request, pk=None):
+        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
         # Проверяем, удалена ли заявка
-        if order.status == 'deleted':
+        if datacenter_order.status == 'deleted':
             return Response({'error': 'Заявка удалена и не может быть завершена или отклонена.'}, status=status.HTTP_400_BAD_REQUEST)
 
         action = request.data.get('action')
@@ -374,16 +377,16 @@ class DatacenterOrderView(APIView):
             return Response({'error': 'У вас нет прав для выполнения этого действия.'}, status=status.HTTP_403_FORBIDDEN)
 
         if action == 'completed':
-            order.status = 'completed'
-            order.completion_date = timezone.now()
+            datacenter_order.status = 'completed'
+            datacenter_order.completion_date = timezone.now()
         elif action == 'rejected':
-            order.status = 'rejected'
-            order.completion_date = timezone.now()
+            datacenter_order.status = 'rejected'
+            datacenter_order.completion_date = timezone.now()
         else:
             return Response({'error': 'Некорректное значение параметра action.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            order.save()
+            datacenter_order.save()
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -391,54 +394,54 @@ class DatacenterOrderView(APIView):
 
     # 13. DELETE: Удаление заявки
     def delete(self, request, pk=None):
-        order = get_object_or_404(DatacenterOrder, id=pk)
+        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
         # Проверяем, удалена ли заявка
-        if order.status == 'deleted':
+        if datacenter_order.status == 'deleted':
             return Response({'error': 'Заявка уже удалена и не может быть удалена повторно.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        order.status = 'deleted'
+        datacenter_order.status = 'deleted'
         
         try:
-            order.save()
+            datacenter_order.save()
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({'message': 'Заявка успешно удалена.'}, status=status.HTTP_204_NO_CONTENT)  
+        return Response({'message': 'Заявка успешно удалена.'}, status=status.HTTP_204_NO_CONTENT) 
 
-class ServiceOrderView(APIView):
-# 14. DELETE: Удаление услуги из заявки
-    def delete(self, request, order_id, service_id):
-        order = get_object_or_404(DatacenterOrder, id=order_id)
+class DatacenterServiceOrderView(APIView):
+    # 14. DELETE: Удаление услуги из заявки
+    def delete(self, request, datacenter_order_id, datacenter_service_id):
+        datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
 
-        if order.status == 'deleted':
+        if datacenter_order.status == 'deleted':
             return Response({'error': 'Заказ удален, нельзя удалить услуги'}, status=status.HTTP_400_BAD_REQUEST)
 
-        service = get_object_or_404(DatacenterService, id=service_id)
+        datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
 
-        order_service = DatacenterOrderService.objects.filter(order=order, service=service).first()
+        datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
 
-        if order_service:
-            if order_service.quantity > 1:
+        if datacenter_order_service:
+            if datacenter_order_service.quantity > 1:
                 # Уменьшаем количество услуги на 1
-                order_service.quantity -= 1
-                order_service.save()
+                datacenter_order_service.quantity -= 1
+                datacenter_order_service.save()
                 return Response({'message': 'Количество услуги уменьшено на 1'}, status=status.HTTP_200_OK)
             else:
                 # Удаляем запись, если количество равно 1
-                order_service.delete()
+                datacenter_order_service.delete()
                 return Response({'message': 'Услуга удалена из заказа'}, status=status.HTTP_204_NO_CONTENT)
 
         return Response({'error': 'Услуга не найдена в заказе'}, status=status.HTTP_404_NOT_FOUND)
 
     # 15. PUT: Изменение количества/порядка/значения услуги в заявке
-    def put(self, request, order_id, service_id):
-        order = get_object_or_404(DatacenterOrder, id=order_id)
-        service = get_object_or_404(DatacenterService, id=service_id)
+    def put(self, request, datacenter_order_id, datacenter_service_id):
+        datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+        datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
 
-        order_service = DatacenterOrderService.objects.filter(order=order, service=service).first()
+        datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
 
-        if order_service:
+        if datacenter_order_service:
             data = request.data
             new_quantity = data.get('quantity')
 
@@ -452,8 +455,8 @@ class ServiceOrderView(APIView):
             except ValueError:
                 return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
 
-            order_service.quantity = new_quantity
-            order_service.save()
+            datacenter_order_service.quantity = new_quantity
+            datacenter_order_service.save()
             return Response({'message': 'Количество услуги обновлено в заказе'}, status=status.HTTP_200_OK)
 
         return Response({'error': 'Услуга не найдена в заказе'}, status=status.HTTP_404_NOT_FOUND)
