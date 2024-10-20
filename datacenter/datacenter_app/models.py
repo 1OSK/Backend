@@ -2,7 +2,8 @@ from django.db import models
 from django.contrib.auth.models import User  
 from django.core.exceptions import ValidationError 
 from django.utils import timezone  
-
+from rest_framework import serializers
+from datetime import datetime
 class DatacenterService(models.Model):
    
     STATUS_CHOICES = [
@@ -26,8 +27,12 @@ class DatacenterService(models.Model):
         return self.name
 
 
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import datetime
+
 class DatacenterOrder(models.Model):
-    
     STATUS_CHOICES = [
         ('draft', 'Черновик'),
         ('deleted', 'Удален'),
@@ -36,27 +41,16 @@ class DatacenterOrder(models.Model):
         ('rejected', 'Отклонен'),
     ]
 
-    
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
-    
     creation_date = models.DateTimeField(default=timezone.now)
-    
     formation_date = models.DateTimeField(null=True, blank=True)
-    
     completion_date = models.DateTimeField(null=True, blank=True)
-    
     creator = models.ForeignKey(User, related_name='orders_created', on_delete=models.CASCADE)
-    
     moderator = models.ForeignKey(User, related_name='orders_moderated', on_delete=models.SET_NULL, null=True, blank=True)
-
-    
     delivery_address = models.CharField(max_length=255, blank=True, null=True)  
-    
     delivery_time = models.DateTimeField(null=True, blank=True)  
-    
     total_price = models.PositiveIntegerField(null=True, blank=True)
 
-    
     def __str__(self):
         return f"Заказ {self.id} от {self.creator.username}"
 
@@ -90,7 +84,8 @@ class AuthUser(models.Model):
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(auto_now=True)
     first_name = models.CharField(max_length=150)
-
+    is_creator = models.BooleanField(default=False)
+    is_moderator = models.BooleanField(default=False)
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
 

@@ -17,6 +17,18 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.decorators import api_view
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate, login, logout
+from django.shortcuts import get_object_or_404
+from drf_yasg.utils import swagger_auto_schema
+
+
+
 def get_current_user():
     """Получаем текущего пользователя (мокового пользователя)"""
     mock_user = get_mock_user()
@@ -28,485 +40,607 @@ def get_current_user():
 
 
 def get_filtered_queryset(queryset):
-    """Фильтруем queryset, исключая услуги со статусом 'удалена'"""
+    """Фильтруем queryset, исключая товары со статусом 'deleted'"""
     return queryset.exclude(status='deleted')
 
+@swagger_auto_schema(
+    method='post',
+    request_body=DatacenterServiceSerializer,
+    responses={201: DatacenterServiceSerializer},
+    operation_summary="Создать новый товар",
+    operation_description="Создает новый товар в базе данных."
+)
+@api_view(['POST'])
+def create_datacenter_service(request):
+    serializer = DatacenterServiceSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    new_datacenter_service = serializer.save()
+    response_data = DatacenterServiceSerializer(new_datacenter_service).data
+    return Response(response_data, status=status.HTTP_201_CREATED)
 
-class DatacenterServiceAPIView(APIView):
-    queryset = DatacenterService.objects.all()
-    serializer_class = DatacenterServiceSerializer
-
-    @swagger_auto_schema(
-        operation_description="Получение списка услуг или одной услуги по ID",
-        responses={200: DatacenterServiceSerializer(many=True)},
-        manual_parameters=[
-            openapi.Parameter('datacenter_min_price', openapi.IN_QUERY, description="Минимальная цена", type=openapi.TYPE_NUMBER),
-            openapi.Parameter('datacenter_max_price', openapi.IN_QUERY, description="Максимальная цена", type=openapi.TYPE_NUMBER),
-        ]
-    )
-    def get(self, request, pk=None):
-        if pk:
-            datacenter_service = get_object_or_404(self.queryset, id=pk)  # Используем queryset напрямую
-            datacenter_service_data = self.serializer_class(datacenter_service).data
-            return Response(datacenter_service_data)
-        else:
-            return self.get_datacenter_service_list(request)
-
-    @swagger_auto_schema(
-        operation_description="Получение списка услуг с фильтрацией",
-        responses={200: openapi.Response('Успех', DatacenterServiceSerializer(many=True))},
-    )
-    def get_datacenter_service_list(self, request):
-        try:
-            mock_user = get_current_user()  # Используем внешнюю функцию
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        min_price = request.GET.get('datacenter_min_price')
-        max_price = request.GET.get('datacenter_max_price')
-
-        datacenter_services = get_filtered_queryset(self.queryset)  # Фильтруем queryset
-
-        if min_price:
-            try:
-                min_price = float(min_price)
-                datacenter_services = datacenter_services.filter(price__gte=min_price)
-            except ValueError:
-                return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if max_price:
-            try:
-                max_price = float(max_price)
-                datacenter_services = datacenter_services.filter(price__lte=max_price)
-            except ValueError:
-                return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
-
-        datacenter_draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
-
-        if datacenter_draft_order:
-            datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
-            datacenter_draft_order_id = datacenter_draft_order.id
-        else:
-            datacenter_services_count = 0
-            datacenter_draft_order_id = None
-
-        datacenter_services_list = self.serializer_class(datacenter_services, many=True).data
-
-        response_data = {
-            'datacenters': datacenter_services_list,
-            'draft_order_id': datacenter_draft_order_id,
-            'datacenters_count': datacenter_services_count
-        }
-
-        return Response(response_data)
-    
-    @swagger_auto_schema(
-        operation_description="Обновление услуги по ID",
-        request_body=DatacenterServiceSerializer,
-        responses={
-            200: DatacenterServiceSerializer,
-            400: openapi.Response('Некорректные данные'),
-        }
-    )
-    def put(self, request, pk):
-        instance = get_object_or_404(self.queryset, pk=pk)
-
-        if instance.status == 'deleted':
-            return Response({'error': 'Невозможно обновить удаленную услугу.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = self.serializer_class(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            updated_datacenter_service = serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        operation_description="Удаление услуги по ID",
-        responses={
-            200: openapi.Response('Услуга успешно удалена'),
-            400: openapi.Response('Ошибка при удалении услуги'),
-        }
-    )
-    def delete(self, request, pk):
-        datacenter_service = get_object_or_404(self.queryset, id=pk)
-
-        if datacenter_service.status == 'deleted':
-            return Response({'error': 'Эта услуга уже была удалена.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if datacenter_service.image_url:
-            client = Minio(
-                endpoint=settings.AWS_S3_ENDPOINT_URL,
-                access_key=settings.AWS_ACCESS_KEY_ID,
-                secret_key=settings.AWS_SECRET_ACCESS_KEY,
-                secure=settings.MINIO_USE_SSL
+@swagger_auto_schema(
+    method='get',
+    manual_parameters=[
+        openapi.Parameter(
+            'datacenter_min_price',
+            openapi.IN_QUERY,
+            description="Минимальная цена для фильтрации",
+            type=openapi.TYPE_NUMBER,
+            required=False,
+        ),
+        openapi.Parameter(
+            'datacenter_max_price',
+            openapi.IN_QUERY,
+            description="Максимальная цена для фильтрации",
+            type=openapi.TYPE_NUMBER,
+            required=False,
+        ),
+    ],
+    responses={
+        200: DatacenterServiceSerializer(many=True),
+        400: openapi.Response(
+            description="Ошибка в параметрах запроса",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'error': openapi.Schema(type=openapi.TYPE_STRING, description="Описание ошибки")
+                }
             )
-            try:
-                client.remove_object('something', f"{datacenter_service.id}.png")
-            except Exception as e:
-                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        )
+    },
+    operation_summary="Получить список товаров",
+    operation_description="Возвращает список товаров с фильтрацией по цене."
+)
+@api_view(['GET'])
+def get_datacenter_service_list(request):
+    try:
+        mock_user = get_current_user()  # Используем внешнюю функцию
+    except ValueError as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        datacenter_service.status = 'deleted'
-        datacenter_service.save()
+    min_price = request.GET.get('datacenter_min_price')
+    max_price = request.GET.get('datacenter_max_price')
 
-        return Response({'message': 'Услуга успешно удалена'}, status=status.HTTP_200_OK)
+    datacenter_services = get_filtered_queryset(DatacenterService.objects.all())  # Фильтруем queryset
 
-    @swagger_auto_schema(
-        operation_description="Добавление услуги в черновик заказа",
-        responses={
-            201: openapi.Response('Услуга добавлена в черновик заказа'),
-            400: openapi.Response('Ошибка при добавлении услуги в черновик'),
-        }
-    )
-    def post_add_to_draft(self, request, pk):
-        datacenter_service = get_object_or_404(DatacenterService, id=pk)
-
+    if min_price:
         try:
-            mock_user = get_current_user()  # Используем внешнюю функцию
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            min_price = float(min_price)
+            datacenter_services = datacenter_services.filter(price__gte=min_price)
+        except ValueError:
+            return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-        datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
-            creator=mock_user,
-            status='draft'
-        )
+    if max_price:
+        try:
+            max_price = float(max_price)
+            datacenter_services = datacenter_services.filter(price__lte=max_price)
+        except ValueError:
+            return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-        datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
-            order=datacenter_draft_order,
-            service=datacenter_service,
-            defaults={'quantity': 0}
-        )
+    datacenter_draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
 
-        if created:
-            datacenter_order_service.quantity = 1
-        else:
-            datacenter_order_service.quantity += 1
-
-        datacenter_order_service.save()
-
-        datacenter_draft_order.total_price = sum(
-            datacenter_order_service.quantity * datacenter_order_service.service.price
-            for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
-        )
-        datacenter_draft_order.save()
-
+    if datacenter_draft_order:
         datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
+        datacenter_draft_order_id = datacenter_draft_order.id
+    else:
+        datacenter_services_count = 0
+        datacenter_draft_order_id = None
 
-        serializer = DatacenterOrderSerializer(datacenter_draft_order)
+    datacenter_services_list = DatacenterServiceSerializer(datacenter_services, many=True).data
 
-        return Response(
-            {
-                'message': 'Услуга добавлена в черновик заказа',
-                'draft_order': serializer.data,
-                'datacenters_count': datacenter_services_count
-            },
-            status=status.HTTP_201_CREATED
+    response_data = {
+        'datacenters': datacenter_services_list,
+        'draft_order_id': datacenter_draft_order_id,
+        'datacenters_count': datacenter_services_count
+    }
+
+    return Response(response_data)
+
+@swagger_auto_schema(
+    method='get',
+    responses={200: DatacenterServiceSerializer},
+    operation_summary="Получить товар по ID",
+)
+@api_view(['GET'])
+def get_datacenter_service(request, pk):
+    datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
+    datacenter_service_data = DatacenterServiceSerializer(datacenter_service).data
+    return Response(datacenter_service_data)
+
+@swagger_auto_schema(
+    method='put',
+    request_body=DatacenterServiceSerializer,
+    responses={200: DatacenterServiceSerializer, 400: "Ошибка при обновлении"},
+    operation_summary="Обновить товар",
+)
+@api_view(['PUT'])
+def update_datacenter_service(request, pk):
+    instance = get_object_or_404(DatacenterService.objects.all(), pk=pk)
+
+    if instance.status == 'deleted':
+        return Response({'error': 'Невозможно обновить удаленный товар.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = DatacenterServiceSerializer(instance, data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    try:
+        updated_datacenter_service = serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='delete',
+    responses={200: "Товар успешно удален", 400: "Ошибка при удалении"},
+    operation_summary="Удалить товар",
+)
+@api_view(['DELETE'])
+def delete_datacenter_service(request, pk):
+    datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
+
+    if datacenter_service.status == 'deleted':
+        return Response({'error': 'Этот товар уже был удален.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if datacenter_service.image_url:
+        client = Minio(
+            endpoint=settings.AWS_S3_ENDPOINT_URL,
+            access_key=settings.AWS_ACCESS_KEY_ID,
+            secret_key=settings.AWS_SECRET_ACCESS_KEY,
+            secure=settings.MINIO_USE_SSL
         )
+        try:
+            client.remove_object('something', f"{datacenter_service.id}.png")
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(
-        operation_description="Создание новой услуги",
-        request_body=DatacenterServiceSerializer,
-        responses={
-            201: DatacenterServiceSerializer,
-            400: openapi.Response('Некорректные данные'),
-        }
+    datacenter_service.status = 'deleted'
+    datacenter_service.save()
+
+    return Response({'message': 'Товар успешно удален'}, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='post',
+    responses={201: DatacenterOrderSerializer, 400: "Ошибка при добавлении в черновик"},
+    operation_summary="Добавить товар в черновик заказа",
+)
+@api_view(['POST'])
+def add_to_draft(request, pk):
+    datacenter_service = get_object_or_404(DatacenterService, id=pk)
+
+    try:
+        mock_user = get_current_user()  # Используем внешнюю функцию
+    except ValueError as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
+        creator=mock_user,
+        status='draft'
     )
-    def post(self, request, pk=None):
-        if request.path.endswith('/add-image/'):
-            return self.post_add_image(request, pk)
-        elif request.path.endswith('/add-to-draft/'):
-            return self.post_add_to_draft(request, pk)
-        else:
-            serializer = self.serializer_class(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            new_datacenter_service = serializer.save()
-            response_data = self.serializer_class(new_datacenter_service).data
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        
-    @swagger_auto_schema(
-        operation_description="Добавление изображения к услуге",
-        request_body=openapi.Schema(type=openapi.TYPE_OBJECT, properties={
-            'image': openapi.Schema(type=openapi.TYPE_FILE, description='Изображение услуги')
-        }),
-        responses={
-            200: openapi.Response('Изображение успешно добавлено или обновлено'),
-            400: openapi.Response('Ошибка при добавлении изображения'),
-        }
+
+    datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
+        order=datacenter_draft_order,
+        service=datacenter_service,
+        defaults={'quantity': 0}
     )
-    def post_add_image(self, request, pk):
-        datacenter_service = get_object_or_404(self.queryset, id=pk)
 
-        if datacenter_service.status == 'deleted':
-            return Response({'error': 'Нельзя добавлять изображение к удаленной услуге.'}, status=400)
+    if created:
+        datacenter_order_service.quantity = 1
+    else:
+        datacenter_order_service.quantity += 1
 
-        if 'image' not in request.FILES:
-            return Response({'error': 'Изображение не предоставлено'}, status=400)
+    datacenter_order_service.save()
 
-        image = request.FILES['image']
-        result = add_pic(datacenter_service, image)
+    datacenter_draft_order.total_price = sum(
+        datacenter_order_service.quantity * datacenter_order_service.service.price
+        for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
+    )
+    datacenter_draft_order.save()
 
-        if 'error' in result:
-            return Response({'error': result['error']}, status=400)
+    datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
 
-        datacenter_service.image_url = result['image_url']
-        datacenter_service.save()
+    serializer = DatacenterOrderSerializer(datacenter_draft_order)
 
-        serializer = DatacenterServiceImageSerializer(datacenter_service)
+    return Response(
+        {
+            'message': 'Товар добавлен в черновик заказа',
+            'draft_order': serializer.data,
+            'datacenters_count': datacenter_services_count
+        },
+        status=status.HTTP_201_CREATED
+    )
 
-        return Response({
-            'message': 'Изображение успешно добавлено или обновлено',
-            'service': serializer.data
-        }, status=200)
-        
-class DatacenterOrderView(APIView):
-    # Получение списка или конкретного заказа
-    def get(self, request, pk=None):
-        if pk is not None:
-            return self.retrieve(request, pk)
-        else:
-            moderator = get_mock_user()
-            status_filter = request.GET.get('datacenter_status')
-            start_date = request.GET.get('datacenter_start_date')
-            end_date = request.GET.get('datacenter_end_date')
 
-            # Исключаем заявки со статусом 'deleted' и 'draft'
-            datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'image': openapi.Schema(type=openapi.TYPE_FILE, description='Изображение для добавления')
+        }
+    ),
+    responses={200: DatacenterServiceImageSerializer, 400: "Ошибка при добавлении изображения"},
+    operation_summary="Добавить изображение к товару",
+)
+@api_view(['POST'])
+def add_image(request, pk):
+    datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
 
-            if status_filter:
-                datacenter_orders = datacenter_orders.filter(status=status_filter)
+    if datacenter_service.status == 'deleted':
+        return Response({'error': 'Нельзя добавлять изображение к удаленному товару.'}, status=400)
 
-            if start_date and end_date:
-                try:
-                    start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
-                    end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
-                    datacenter_orders = datacenter_orders.filter(creation_date__range=[start_date, end_date])
-                except ValueError:
-                    return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+    if 'image' not in request.FILES:
+        return Response({'error': 'Изображение не предоставлено'}, status=400)
 
-            serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
-            return Response({'datacenter_orders': serializer.data})
+    image = request.FILES['image']
+    result = add_pic(datacenter_service, image)
 
-    # Получение информации о заявке
-    def retrieve(self, request, pk=None):
-        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
+    if 'error' in result:
+        return Response({'error': result['error']}, status=400)
 
-        if datacenter_order.status == 'deleted':
-            return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
+    datacenter_service.image_url = result['image_url']
+    datacenter_service.save()
 
-        serializer = DatacenterOrderSerializer(datacenter_order)
-        return Response(serializer.data)
+    serializer = DatacenterServiceImageSerializer(datacenter_service)
 
-    # Обновление заявки
-    def put(self, request, pk=None):
-        if pk is not None:
-            # Определяем действие на основе пути
-            if request.path.endswith('/submit/'):
-                return self.submit_datacenter_order(request, pk)
-            elif request.path.endswith('/finalize/'):
-                return self.finalize_datacenter_order(request, pk)
-            elif request.path.endswith('/update/'):
-                try:
-                    datacenter_order = DatacenterOrder.objects.get(id=pk)
-                except DatacenterOrder.DoesNotExist:
-                    return Response({'error': 'Заявка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+    return Response({
+        'message': 'Изображение успешно добавлено или обновлено',
+        'service': serializer.data
+    }, status=200)
 
-                if datacenter_order.status == 'deleted':
-                    return Response({'error': 'Обновление удалённых заявок невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
 
-                serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
 
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response({'message': 'Заказ обновлён успешно', 'datacenter_order_id': datacenter_order.id}, status=status.HTTP_200_OK)
+ # 1. GET /orders/ - Получение списка заказов
+@swagger_auto_schema(
+    method='get',
+    manual_parameters=[
+        openapi.Parameter('datacenter_status', openapi.IN_QUERY, description="Фильтр по статусу заказа", type=openapi.TYPE_STRING),
+        openapi.Parameter('datacenter_start_date', openapi.IN_QUERY, description="Начальная дата", type=openapi.TYPE_STRING),
+        openapi.Parameter('datacenter_end_date', openapi.IN_QUERY, description="Конечная дата", type=openapi.TYPE_STRING)
+    ],
+    responses={200: DatacenterOrderSerializer(many=True), 400: "Ошибка в запросе"},
+    operation_summary="Получить список заказов",
+    operation_description="Возвращает список заказов с фильтрацией по статусу и дате создания."
+)
+@api_view(['GET'])
+def list_orders(request):
+    status_filter = request.GET.get('datacenter_status')
+    start_date = request.GET.get('datacenter_start_date')
+    end_date = request.GET.get('datacenter_end_date')
 
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
 
-            else:
-                return Response({'error': 'Неизвестное действие'}, status=status.HTTP_400_BAD_REQUEST)
+    if status_filter:
+        datacenter_orders = datacenter_orders.filter(status=status_filter)
 
-        return Response({'error': 'ID заявки не указан'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Отправка заявки
-    def submit_datacenter_order(self, request, pk=None):
-        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
-
-        if datacenter_order.status != 'draft':
-            return Response({'error': 'Заказ уже был отправлен или не в состоянии для отправки.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        delivery_address = datacenter_order.delivery_address
-        delivery_time = datacenter_order.delivery_time
-
-        if not delivery_address:
-            return Response({'error': 'Адрес доставки не указан в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not delivery_time:
-            return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        datacenter_order.status = 'formed'
-        datacenter_order.formation_date = timezone.now()
-
+    if start_date and end_date:
         try:
-            datacenter_order.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
+            end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
+            datacenter_orders = datacenter_orders.filter(creation_date__range=[start_date, end_date])
+        except ValueError:
+            return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = DatacenterOrderSerializer(datacenter_order)
-        return Response({'message': 'Заказ успешно отправлен', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
+    serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # Завершение или отклонение заявки
-    def finalize_datacenter_order(self, request, pk=None):
-        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        if datacenter_order.status == 'deleted':
-            return Response({'error': 'Заявка удалена и не может быть завершена или отклонена.'}, status=status.HTTP_400_BAD_REQUEST)
+# 2. GET /orders/{id}/ - Получение конкретной заявки
+@swagger_auto_schema(
+    method='get',
+    responses={200: DatacenterOrderSerializer(), 404: "Заказ не найден"},
+    operation_summary="Получить заказ",
+    operation_description="Возвращает информацию о конкретном заказе по его ID."
+)
+@api_view(['GET'])
+def retrieve_order(request, pk):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        action = request.data.get('action')
+    if datacenter_order.status == 'deleted':
+        return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
-        if not action:
-            return Response({'error': 'Параметр action не указан.'}, status=status.HTTP_400_BAD_REQUEST)
+    serializer = DatacenterOrderSerializer(datacenter_order)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
-        moderator = get_mock_user()
 
-        if request.user.id not in [moderator.id]:
-            return Response({'error': 'У вас нет прав для выполнения этого действия.'}, status=status.HTTP_403_FORBIDDEN)
+# 3. DELETE /orders/{id}/ - Удаление заявки
+@swagger_auto_schema(
+    method='delete',
+    responses={204: "Заказ удалён", 404: "Заказ не найден", 400: "Невозможно удалить"},
+    operation_summary="Удалить заказ",
+    operation_description="Помечает заказ как удалённый."
+)
+@api_view(['DELETE'])
+def delete_order(request, pk):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        if action == 'completed':
-            datacenter_order.status = 'completed'
-            datacenter_order.completion_date = timezone.now()
-        elif action == 'rejected':
-            datacenter_order.status = 'rejected'
-            datacenter_order.completion_date = timezone.now()
-        else:
-            return Response({'error': 'Некорректное значение параметра action.'}, status=status.HTTP_400_BAD_REQUEST)
+    if datacenter_order.status == 'deleted':
+        return Response({'error': 'Заказ уже удалён.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            datacenter_order.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    datacenter_order.status = 'deleted'
+    datacenter_order.save()
 
-        return Response({'message': f'Заявка успешно {action}.'}, status=status.HTTP_200_OK)
+    return Response({'message': 'Заказ успешно удалён.'}, status=status.HTTP_204_NO_CONTENT)
 
-    # Удаление заявки
-    def delete(self, request, pk=None):
-        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        if datacenter_order.status == 'deleted':
-            return Response({'error': 'Заявка уже удалена и не может быть удалена повторно.'}, status=status.HTTP_400_BAD_REQUEST)
+# 4. PUT /orders/{id}/submit/ - Подтверждение заявки
+@swagger_auto_schema(
+    method='put',
+    responses={200: "Заказ подтверждён", 404: "Заказ не найден", 400: "Ошибка подтверждения"},
+    operation_summary="Подтвердить заказ",
+    operation_description="Подтверждает заказ по его ID."
+)
+@api_view(['PUT'])
+def submit_order(request, pk):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
-        datacenter_order.status = 'deleted'
-        
-        try:
-            datacenter_order.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    if datacenter_order.status != 'draft':
+        return Response({'error': 'Заказ уже был отправлен или не может быть отправлен.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({'message': 'Заявка успешно удалена.'}, status=status.HTTP_204_NO_CONTENT)
+    delivery_address = datacenter_order.delivery_address
+    delivery_time = datacenter_order.delivery_time
 
-class DatacenterServiceOrderView(APIView):
-    # 14. DELETE: Удаление услуги из заявки
-    def delete(self, request, datacenter_order_id, datacenter_service_id):
-        # Получаем заказ по ID, если не найден, возвращаем 404
-        datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
-
-        # Проверяем, был ли заказ удален
-        if datacenter_order.status == 'deleted':
-            return Response({'error': 'Заказ удален, нельзя удалить услуги'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Получаем услугу по ID, если не найден, возвращаем 404
-        datacenter = get_object_or_404(DatacenterService, id=datacenter_service_id)
-
-        # Находим связь между заказом и услугой
-        datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter).first()
-
-        # Проверяем, существует ли связь между заказом и услугой
-        if datacenter_order_service:
-            if datacenter_order_service.quantity > 1:
-                # Уменьшаем количество услуги на 1
-                datacenter_order_service.quantity -= 1
-                datacenter_order_service.save()
-                return Response({'message': 'Количество услуги уменьшено на 1'}, status=status.HTTP_200_OK)
-            else:
-                # Удаляем связь, если количество равно 1
-                datacenter_order_service.delete()
-                return Response({'message': 'Услуга удалена из заказа'}, status=status.HTTP_204_NO_CONTENT)
-
-        # Если услуга не найдена в заказе
-        return Response({'error': 'Услуга не найдена в заказе'}, status=status.HTTP_404_NOT_FOUND)
-
-    # 15. PUT: Изменение количества/порядка/значения услуги в заявке
-    def put(self, request, datacenter_order_id, datacenter_service_id):
-        datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
-        datacenter = get_object_or_404(DatacenterService, id=datacenter_service_id)
-
-        datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter).first()
-
-        if datacenter_order_service:
-            data = request.data
-            new_quantity = data.get('quantity')
-
-            if new_quantity is None:
-                return Response({'error': 'Не указано количество'}, status=status.HTTP_400_BAD_REQUEST)
-
-            try:
-                new_quantity = int(new_quantity)
-                if new_quantity < 1:
-                    return Response({'error': 'Количество должно быть положительным'}, status=status.HTTP_400_BAD_REQUEST)
-            except ValueError:
-                return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
-
-            datacenter_order_service.quantity = new_quantity
-            datacenter_order_service.save()
-            return Response({'message': 'Количество услуги обновлено в заказе'}, status=status.HTTP_200_OK)
-
-        return Response({'error': 'Услуга не найдена в заказе'}, status=status.HTTP_404_NOT_FOUND)
-
-class UserView(viewsets.ViewSet):
-    # 16. POST: Регистрация пользователя
-    def register(self, request):
-        data = request.data
-        username = data.get('username')
-        password = data.get('password')
-        email = data.get('email')
-
-        if User.objects.filter(username=username).exists():
-            return Response({'error': 'Пользователь с таким именем уже существует'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            return Response({'error': 'Неверный формат email'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = User.objects.create_user(username=username, password=password, email=email)
-        return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
-
-    # 17. PUT: Обновление информации о пользователе
-    def update_user(self, request, pk=None):
-        user = get_object_or_404(User, id=pk)
-        data = request.data
-
-        user.username = data.get('username', user.username)
-        user.email = data.get('email', user.email)
-        if 'password' in data:
-            user.set_password(data['password'])
-        user.save()
-
-        return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
-
-    # 18. POST: Вход пользователя
-    def login_user(self, request):
-        data = request.data
-        username = data.get('username')
-        password = data.get('password')
-
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return Response({'message': 'Пользователь успешно вошел в систему'}, status=status.HTTP_200_OK)
-        return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_401_UNAUTHORIZED)
-
-    # 19. POST: Выход пользователя
-    def logout_user(self, request):
-        logout(request)
-        return Response({'message': 'Пользователь успешно вышел из системы'}, status=status.HTTP_200_OK)
+    if not delivery_address:
+        return Response({'error': 'Адрес доставки не указан в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
     
+    if not delivery_time:
+        return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    datacenter_order.status = 'formed'
+    datacenter_order.formation_date = timezone.now()
+    datacenter_order.save()
+
+    serializer = DatacenterOrderSerializer(datacenter_order)
+    return Response({'message': 'Заказ подтверждён успешно', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
+
+
+# 5. PUT /orders/{id}/finalize/ - Завершение или отклонение заявки
+@swagger_auto_schema(
+    method='put',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'action': openapi.Schema(type=openapi.TYPE_STRING, description="Действие: completed или rejected")
+        },
+        required=['action']
+    ),
+    responses={200: "Заявка завершена", 400: "Ошибка завершения", 403: "Нет прав"},
+    operation_summary="Завершить или отклонить заказ",
+    operation_description="Завершает или отклоняет заказ по его ID."
+)
+@api_view(['PUT'])
+def finalize_order(request, pk):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
+
+    if datacenter_order.status == 'deleted':
+        return Response({'error': 'Заказ удален и не может быть завершен.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    action = request.data.get('action')
+
+    if not action or action not in ['completed', 'rejected']:
+        return Response({'error': 'Некорректное действие.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if action == 'completed':
+        datacenter_order.status = 'completed'
+        datacenter_order.completion_date = timezone.now()
+    elif action == 'rejected':
+        datacenter_order.status = 'rejected'
+        datacenter_order.completion_date = timezone.now()
+
+    datacenter_order.save()
+    return Response({'message': f'Заявка успешно {action}.'}, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='put',
+    request_body=DatacenterOrderSerializer,
+    responses={
+        200: "Заказ обновлен",
+        404: "Заказ не найден",
+        400: "Ошибка обновления"
+    },
+    operation_summary="Изменить заказ",
+    operation_description="Обновляет данные заказа по его ID."
+)
+@api_view(['PUT'])
+def update_order(request, pk):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
+
+    if datacenter_order.status == 'deleted':
+        return Response({'error': 'Обновление удалённых заказов невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response({'message': 'Заказ обновлён успешно', 'data': serializer.data}, status=status.HTTP_200_OK)
+
+    # Отладочная информация
+    print(serializer.errors)  # Печатаем ошибки в консоль
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# DELETE: Удаление услуги из заказа
+@swagger_auto_schema(
+    method='delete',
+    operation_description="Удаление товара из заказа",
+    responses={
+        200: 'Количество товаров уменьшено на 1',
+        204: 'Товар удален из заказа',
+        400: 'Заказ удален, нельзя удалить товары',
+        404: 'Товар не найден в заказе',
+    }
+)
+@api_view(['DELETE'])
+def delete_service_from_order(request, datacenter_order_id, datacenter_service_id):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+
+    if datacenter_order.status == 'deleted':
+        return Response({'error': 'Заказ удален, нельзя удалить товар'}, status=status.HTTP_400_BAD_REQUEST)
+
+    datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
+
+    datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
+
+    if datacenter_order_service:
+        if datacenter_order_service.quantity > 1:
+            datacenter_order_service.quantity -= 1
+            datacenter_order_service.save()
+            return Response({'message': 'Количество товаров уменьшено на 1'}, status=status.HTTP_200_OK)
+        else:
+            datacenter_order_service.delete()
+            return Response({'message': 'Товар удален из заказа'}, status=status.HTTP_204_NO_CONTENT)
+
+    return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# PUT: Изменение количества услуги в заказе
+@swagger_auto_schema(
+    method='put',
+    operation_description="Изменение количества товаров в заказе",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'quantity': openapi.Schema(type=openapi.TYPE_INTEGER, description='Новое количество товаров')
+        },
+        required=['quantity']
+    ),
+    responses={
+        200: 'Количество товаров обновлено в заказе',
+        400: 'Некорректное количество или другое сообщение об ошибке',
+        404: 'Товар не найден в заказе',
+    }
+)
+@api_view(['PUT'])
+def update_service_quantity_in_order(request, datacenter_order_id, datacenter_service_id):
+    datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+    datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
+
+    datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
+
+    if datacenter_order_service:
+        data = request.data
+        new_quantity = data.get('quantity')
+
+        if new_quantity is None:
+            return Response({'error': 'Не указано количество'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_quantity = int(new_quantity)
+            if new_quantity < 1:
+                return Response({'error': 'Количество должно быть положительным'}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
+
+        datacenter_order_service.quantity = new_quantity
+        datacenter_order_service.save()
+        return Response({'message': 'Количество товаров обновлено в заказе'}, status=status.HTTP_200_OK)
+
+    return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
+
+# POST: Регистрация пользователя
+@swagger_auto_schema(
+    method='post',
+    operation_description="Регистрация пользователя",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
+            'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email адрес'),
+        },
+        required=['username', 'password', 'email'],
+    ),
+    responses={
+        201: openapi.Response(description='Пользователь успешно зарегистрирован'),
+        400: openapi.Response(description='Ошибка валидации'),
+    },
+)
+@api_view(['POST'])
+def register_user(request):
+    data = request.data
+    username = data.get('username')
+    password = data.get('password')
+    email = data.get('email')
+
+    if User.objects.filter(username=username).exists():
+        return Response({'error': 'Пользователь с таким именем уже существует'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return Response({'error': 'Неверный формат email'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.create_user(username=username, password=password, email=email)
+    return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
+
+# PUT: Обновление информации о пользователе
+@swagger_auto_schema(
+    method='put',
+    operation_description="Обновление информации о пользователе",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
+            'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email адрес'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
+        },
+        required=[],
+    ),
+    responses={
+        200: openapi.Response(description='Информация о пользователе успешно обновлена'),
+        404: openapi.Response(description='Пользователь не найден'),
+    },
+)
+@api_view(['PUT'])
+def update_user(request, pk):
+    user = get_object_or_404(User, id=pk)
+    data = request.data
+
+    user.username = data.get('username', user.username)
+    user.email = data.get('email', user.email)
+    if 'password' in data:
+        user.set_password(data['password'])
+    user.save()
+
+    return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
+
+# POST: Вход пользователя
+@swagger_auto_schema(
+    method='post',
+    operation_description="Вход пользователя",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
+        },
+        required=['username', 'password'],
+    ),
+    responses={
+        200: openapi.Response(description='Пользователь успешно вошел в систему'),
+        401: openapi.Response(description='Неверное имя пользователя или пароль'),
+    },
+)
+@api_view(['POST'])
+def login_user(request):
+    data = request.data
+    username = data.get('username')
+    password = data.get('password')
+
+    user = authenticate(request, username=username, password=password)
+    if user is not None:
+        login(request, user)
+        return Response({'message': 'Пользователь успешно вошел в систему'}, status=status.HTTP_200_OK)
+    return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_401_UNAUTHORIZED)
+
+# POST: Выход пользователя
+@swagger_auto_schema(
+    method='post',
+    operation_description="Выход пользователя",
+    responses={
+        200: openapi.Response(description='Пользователь успешно вышел из системы'),
+    },
+)
+@api_view(['POST'])
+def logout_user(request):
+    logout(request)
+    return Response({'message': 'Пользователь успешно вышел из системы'}, status=status.HTTP_200_OK)
