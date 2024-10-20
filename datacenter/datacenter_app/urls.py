@@ -5,26 +5,31 @@ from .views import DatacenterServiceAPIView, DatacenterOrderView, DatacenterServ
 
 urlpatterns = [
     # Список услуг и создание новой услуги
-    path('services/', DatacenterServiceAPIView.as_view(), name='service-list-create'),
+    path('datacenters/', DatacenterServiceAPIView.as_view(), name='datacenter-list-create'),
     
     # Получение, обновление и удаление конкретной услуги
-    path('services/<int:pk>/', DatacenterServiceAPIView.as_view(), name='service-detail'),
+    path('datacenters/<int:pk>/', DatacenterServiceAPIView.as_view(), name='datacenter-detail'),
 
-    # Добавление услуги в черновик заказа
-    path('services/<int:pk>/add-to-draft/', DatacenterServiceAPIView.as_view(), name='service-add-to-draft'),
+    # Добавление услуги в черновик заявки
+    path('datacenters/<int:pk>/add-to-draft/', DatacenterServiceAPIView.as_view(), name='datacenter-add-to-draft'),
 
-     # Добавление изображения через POST
-    path('services/<int:pk>/add-image/', DatacenterServiceAPIView.as_view(), name='service-add-image'),
+    # Добавление изображения через POST
+    path('datacenters/<int:pk>/add-image/', DatacenterServiceAPIView.as_view(), name='datacenter-add-image'),
     
+    path('datacenter-orders/', DatacenterOrderView.as_view(), name='datacenter-order-list'),  # для списка заявок
+    path('datacenter-orders/<int:pk>/', DatacenterOrderView.as_view(), name='datacenter-order-detail'),  # для получения деталей заявки
+    path('datacenter-orders/<int:pk>/submit/', DatacenterOrderView.as_view(), name='datacenter-order-submit'),  # PUT: отправка заявки
+    path('datacenter-orders/<int:pk>/finalize/', DatacenterOrderView.as_view(), name='datacenter-order-finalize'),  # PUT: завершение заявки
+    path('datacenter-orders/<int:pk>/update/', DatacenterOrderView.as_view(), name='datacenter-order-update'),  # PUT: обновление заявки
+    path('datacenter-orders/<int:pk>/delete/', DatacenterOrderView.as_view(), name='datacenter-order-delete'),  # DELETE: удаление заявки
     
-    path('orders/', DatacenterOrderView.as_view(), name='order-list'),  # для списка заказов
-    path('orders/<int:pk>/', DatacenterOrderView.as_view(), name='order-detail'),  # для получения деталей заказа
-    path('orders/<int:pk>/submit/', DatacenterOrderView.as_view(), name='order-submit'),  # PUT: отправка заказа
-    path('orders/<int:pk>/finalize/', DatacenterOrderView.as_view(), name='order-finalize'),  # PUT: завершение заказа
-    path('orders/<int:pk>/update/', DatacenterOrderView.as_view(), name='order-update'),  # PUT: обновление заказа
-    path('orders/<int:pk>/delete/', DatacenterOrderView.as_view(), name='order-delete'),  # DELETE: удаление заказа
+    # URL для удаления услуги из заявки
+    path('datacenter-orders/<int:datacenter_order_id>/datacenters/<int:datacenter_service_id>/', 
+         DatacenterServiceOrderView.as_view(), name='delete_datacenter_service'),
     
-    path('orders/<int:order_id>/services/<int:service_id>/', DatacenterServiceOrderView.as_view(), name='service-order'),
+    # URL для изменения количества услуги в заявке
+    path('datacenter-orders/<int:datacenter_order_id>/datacenters/<int:datacenter_service_id>/update/', 
+         DatacenterServiceOrderView.as_view(), name='update_datacenter_service'),
     
     path('users/register/', UserView.as_view({'post': 'register'}), name='user-register'),  # Регистрация пользователя
     path('users/update/<int:pk>/', UserView.as_view({'put': 'update_user'}), name='user-update'),  # Обновление информации о пользователе
