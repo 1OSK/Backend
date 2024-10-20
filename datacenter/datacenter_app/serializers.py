@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DatacenterService, DatacenterOrder, DatacenterOrderService, AuthUser
+from .models import DatacenterService, DatacenterOrder, DatacenterOrderService, AuthUser, CustomUser
 from collections import OrderedDict
 from datetime import datetime
 # Сериализатор для услуги
@@ -102,3 +102,11 @@ class DatacenterServiceImageSerializer(serializers.ModelSerializer):
             field.required = False  # Делаем поле необязательным
             new_fields[name] = field
         return new_fields
+
+
+class UserSerializer(serializers.ModelSerializer):
+    is_staff = serializers.BooleanField(default=False, required=False)
+    is_superuser = serializers.BooleanField(default=False, required=False)
+    class Meta:
+        model = CustomUser
+        fields = ['email', 'password', 'is_staff', 'is_superuser']
