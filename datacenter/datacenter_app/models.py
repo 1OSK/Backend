@@ -2,7 +2,9 @@ from django.db import models
 from django.contrib.auth.models import User  
 from django.core.exceptions import ValidationError 
 from django.utils import timezone  
-
+from rest_framework import serializers
+from datetime import datetime
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 class DatacenterService(models.Model):
    
     STATUS_CHOICES = [
@@ -26,8 +28,12 @@ class DatacenterService(models.Model):
         return self.name
 
 
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import datetime
+
 class DatacenterOrder(models.Model):
-    
     STATUS_CHOICES = [
         ('draft', 'Черновик'),
         ('deleted', 'Удален'),
@@ -36,27 +42,16 @@ class DatacenterOrder(models.Model):
         ('rejected', 'Отклонен'),
     ]
 
-    
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
-    
     creation_date = models.DateTimeField(default=timezone.now)
-    
     formation_date = models.DateTimeField(null=True, blank=True)
-    
     completion_date = models.DateTimeField(null=True, blank=True)
-    
     creator = models.ForeignKey(User, related_name='orders_created', on_delete=models.CASCADE)
-    
     moderator = models.ForeignKey(User, related_name='orders_moderated', on_delete=models.SET_NULL, null=True, blank=True)
-
-    
     delivery_address = models.CharField(max_length=255, blank=True, null=True)  
-    
     delivery_time = models.DateTimeField(null=True, blank=True)  
-    
     total_price = models.PositiveIntegerField(null=True, blank=True)
 
-    
     def __str__(self):
         return f"Заказ {self.id} от {self.creator.username}"
 
@@ -90,7 +85,8 @@ class AuthUser(models.Model):
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(auto_now=True)
     first_name = models.CharField(max_length=150)
-
+    is_creator = models.BooleanField(default=False)
+    is_moderator = models.BooleanField(default=False)
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
 
@@ -98,3 +94,51 @@ class AuthUser(models.Model):
         managed = False
         db_table = 'auth_user'
 
+
+class NewUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('User must have an email address')
+        
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """Создание суперпользователя"""
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+
+        return self.create_user(email, password, **extra_fields)
+
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    email = models.EmailField("email адрес", unique=True)
+    password = models.CharField(max_length=50, verbose_name="Пароль")
+    is_staff = models.BooleanField(default=False, verbose_name="Является ли пользователь менеджером?")
+    is_superuser = models.BooleanField(default=False, verbose_name="Является ли пользователь админом?")
+
+    USERNAME_FIELD = 'email'
+
+    objects = NewUserManager()
+
+    # Указываем related_name для предотвращения конфликта
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='customuser_set',  # Измените на уникальное имя
+        blank=True,
+        help_text='Группы, к которым принадлежит пользователь.',
+        verbose_name='Группы'
+    )
+
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='customuser_set',  # Измените на уникальное имя
+        blank=True,
+        help_text='Разрешения, присвоенные пользователю.',
+        verbose_name='Разрешения'
+    )
+
+    def __str__(self):
+        return self.email
