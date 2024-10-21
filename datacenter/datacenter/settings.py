@@ -10,7 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
+import os
+import redis
 import os  # Добавлено для использования os.path.join
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -31,6 +34,8 @@ CORS_ALLOW_ALL_ORIGINS = True
 REDIS_HOST = '0.0.0.0'
 REDIS_PORT = 6379
 
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_ALLOW_ALL = True
 AUTH_USER_MODEL = 'datacenter_app.CustomUser'  # Убедитесь, что ваша модель кастомизирована
@@ -48,6 +53,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'drf_yasg',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
@@ -62,13 +68,20 @@ MIDDLEWARE = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ]
+}
+# Настройки для JWT
+SIMPLE_JWT = {
+    
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),  # Время жизни access токена
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),  # Время жизни refresh токена
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 # Отключение CSRF защиты - рекомендую удалить, если не нужно

@@ -47,9 +47,26 @@ from rest_framework.permissions import AllowAny
 from .middleware import CookiePermissionMiddleware
 from django.http import JsonResponse
 from .redis import redis_client 
-
+from rest_framework_simplejwt.tokens import RefreshToken
+from uuid import uuid4
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.authentication import TokenAuthentication 
 session_storage = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
 
+redis_client = redis.StrictRedis.from_url(settings.REDIS_URL, decode_responses=True)
+
+def create_jwt_token(user):
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+
+    # Сохраняем токен в Redis с временем жизни 1 час
+    redis_client.set(access_token, user.id, ex=3600)  # ex - время жизни токена в секундах
+
+    return {
+        'access': str(access_token),
+        'refresh': str(refresh),
+    }
 
 
 def get_current_user(request):
@@ -81,9 +98,14 @@ def get_filtered_queryset(queryset):
     operation_description="Создает новый товар в базе данных."
 )
 @api_view(['POST'])
-@permission_classes([IsAdmin])
+@permission_classes([IsAuthenticated])  # Проверяем, что пользователь аутентифицирован
 def create_datacenter_service(request):
     serializer = DatacenterServiceSerializer(data=request.data)
+    
+    # Проверяем, является ли пользователь администратором
+    if not request.user.is_staff:
+        return Response({'error': 'Доступ запрещен. Необходимы права администратора.'}, status=status.HTTP_403_FORBIDDEN)
+
     serializer.is_valid(raise_exception=True)
     new_datacenter_service = serializer.save()
     response_data = DatacenterServiceSerializer(new_datacenter_service).data
@@ -262,33 +284,27 @@ def delete_datacenter_service(request, pk):
     operation_summary="Добавить товар в черновик заказа",
 )
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])  # Требуем аутентификацию для этого действия
+@authentication_classes([JWTAuthentication])  # Поддержка JWT
 def add_to_draft(request, pk):
     datacenter_service = get_object_or_404(DatacenterService, id=pk)
 
-    # Получаем session_id из куки
-    session_id = request.COOKIES.get('session_id')
+    # Получаем текущего пользователя из токена
+    user = request.user
 
-    # Проверяем, есть ли session_id в Redis
-    if not session_id or not session_storage.get(session_id):
+    # Получаем черновик для текущего пользователя
+    datacenter_draft_order = DatacenterOrder.objects.filter(creator=user, status='draft').first()
+
+    # Если черновика нет, создаем новый для этого пользователя
+    if not datacenter_draft_order:
+        datacenter_draft_order = DatacenterOrder.objects.create(creator=user, status='draft')
+
+    # Проверяем, что черновик принадлежит текущему пользователю
+    if datacenter_draft_order.creator != user:
         return Response(
-            {"error": "Пожалуйста, авторизуйтесь, чтобы добавить товар в черновик."},
-            status=status.HTTP_401_UNAUTHORIZED
+            {"error": "Вы не можете добавлять товары в чужой черновик."},
+            status=status.HTTP_403_FORBIDDEN
         )
-
-    # Получаем user_id из Redis
-    user_id = session_storage.get(session_id).decode('utf-8')
-
-    # Получаем или создаем черновик для данного пользователя
-    datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
-        creator_id=user_id,
-        status='draft'
-    )
-
-    if created:
-        print(f"Created new draft order for user_id: {user_id} with id: {datacenter_draft_order.id}")
-    else:
-        print(f"Using existing draft order for user_id: {user_id} with id: {datacenter_draft_order.id}")
 
     # Создаем или обновляем услугу в черновике
     datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
@@ -314,8 +330,6 @@ def add_to_draft(request, pk):
 
     # Сериализуем черновик
     serializer = DatacenterOrderSerializer(datacenter_draft_order)
-    
-    print(f"Draft order created with creator: {datacenter_draft_order.creator.email}")  # Изменено на email
 
     return Response(
         {
@@ -365,6 +379,14 @@ def add_image(request, pk):
     }, status=200)
 
 
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from .models import DatacenterOrder
+from .serializers import DatacenterOrderSerializer
+from django.utils import timezone
 
 @swagger_auto_schema(
     method='get',
@@ -378,20 +400,10 @@ def add_image(request, pk):
     operation_description="Возвращает список заказов с фильтрацией по статусу и дате создания."
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # Проверка, что пользователь аутентифицирован
 def list_orders(request):
-    # Получаем session_id из куки
-    session_id = request.COOKIES.get('session_id')
-
-    # Проверяем, есть ли session_id в Redis
-    if not session_id or not session_storage.get(session_id):
-        return Response(
-            {"error": "Сессия не найдена или истекла. Авторизуйтесь, чтобы получить доступ."},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
-    # Получаем user_id из Redis
-    user_id = session_storage.get(session_id).decode('utf-8')
+    # Пользователь уже установлен через IsAuthenticated
+    user = request.user
 
     # Фильтры
     status_filter = request.GET.get('datacenter_status')
@@ -402,8 +414,8 @@ def list_orders(request):
     datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
 
     # Если пользователь не менеджер или администратор, фильтруем заказы по пользователю
-    if not request.user.is_staff and not request.user.is_superuser:
-        datacenter_orders = datacenter_orders.filter(creator_id=user_id)
+    if not user.is_staff and not user.is_superuser:
+        datacenter_orders = datacenter_orders.filter(creator_id=user.id)
 
     # Фильтрация по статусу
     if status_filter:
@@ -421,6 +433,9 @@ def list_orders(request):
     # Сериализуем результат
     serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
 
 @swagger_auto_schema(
     method='get',
@@ -856,7 +871,11 @@ session_storage = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDI
     responses={
         200: openapi.Response('Успешный вход', 
                               schema=openapi.Schema(type=openapi.TYPE_OBJECT, 
-                                                    properties={'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя')})),
+                                                    properties={
+                                                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя'),
+                                                        'access': openapi.Schema(type=openapi.TYPE_STRING, description='Access токен'),
+                                                        'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh токен'),
+                                                    })),
         401: 'Неверный email или пароль.'
     },
     operation_summary="Вход пользователя",
@@ -868,21 +887,31 @@ def login_user(request):
     email = request.data.get('email')
     password = request.data.get('password')
 
+    # Логирование попытки входа
+    logger.info(f"Попытка входа пользователя с email: {email}")
+
     user = authenticate(request, email=email, password=password)
     
     if user is not None:
-        session_id = str(uuid.uuid4())  # Генерация уникального идентификатора сессии
+        # Генерация токенов
+        refresh = RefreshToken.for_user(user)
+
+        # Ответ с токенами
+        response = Response({
+            'email': user.email,
+            'access': str(refresh.access_token),  # Access токен
+            'refresh': str(refresh),  # Refresh токен
+        }, status=status.HTTP_200_OK)
+
+        # (Необязательно) Сохранение токена в Redis
+        redis_client.set(str(refresh.access_token), user.id, ex=3600)  # Сохраняем ID пользователя с TTL 1 час
         
-        # Сохраняем идентификатор пользователя в Redis
-        redis_client.set(session_id, user.id)  # Сохраняем ID пользователя вместо email
-        
-        response = Response({'email': user.email}, status=status.HTTP_200_OK)
-        response.set_cookie(key='session_id', value=session_id, httponly=True)
+        logger.info(f"Access токен сохранен в Redis для пользователя с email: {email}")
+
         return response
 
-    logger.warning(f"Invalid login attempt for email: {email}")
-    return Response({'detail': 'Invalid email/password.'}, status=status.HTTP_401_UNAUTHORIZED)
-
+    logger.warning(f"Неверная попытка входа для email: {email}")
+    return Response({'detail': 'Неверный email или пароль.'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @swagger_auto_schema(
@@ -894,7 +923,7 @@ def login_user(request):
     operation_description="Разлогинивает пользователя."
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  # Доступ только для аутентифицированных пользователей
+@permission_classes([AllowAny]) # Доступ только для аутентифицированных пользователей
 def logout_user(request):
     session_id = request.COOKIES.get('session_id')
 
@@ -964,3 +993,5 @@ def update_user(request, user_id):
 
     logger.error(f"Validation errors: {serializer.errors}")
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
