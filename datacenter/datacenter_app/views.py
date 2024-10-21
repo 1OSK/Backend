@@ -9,16 +9,16 @@ from minio import Minio
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import authenticate, login, logout
-from .singleton import get_mock_user
+import logging
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
-from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer, DatacenterServiceImageSerializer
+from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer, DatacenterServiceImageSerializer, LoginSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.decorators import api_view
-
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -26,17 +26,31 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework.permissions import AllowAny
+from .models import CustomUser
+from .serializers import UserSerializer
+from rest_framework.decorators import authentication_classes
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
+from rest_framework.exceptions import AuthenticationFailed
+from .permissions import IsManagerOrAdmin, IsAdmin, IsManager, IsAuthenticatedAndManagerOrOwnOrders
+from django.contrib.auth import get_user_model
+from rest_framework.permissions import IsAuthenticated
+def get_current_user(request):
+    """Получаем текущего пользователя"""
+    
+    # Проверяем, аутентифицирован ли пользователь
+    if isinstance(request.user, AnonymousUser):
+        raise AuthenticationFailed("Пользователь не аутентифицирован")
 
+    # Получаем модель пользователя через get_user_model
+    CustomUser = get_user_model()
 
-
-def get_current_user():
-    """Получаем текущего пользователя (мокового пользователя)"""
-    mock_user = get_mock_user()
-
-    if not isinstance(mock_user, User):
+    # Проверяем, что текущий пользователь является экземпляром кастомной модели
+    if not isinstance(request.user, CustomUser):
         raise ValueError("Неверный пользователь")
 
-    return mock_user
+    return request.user
 
 
 def get_filtered_queryset(queryset):
@@ -51,6 +65,7 @@ def get_filtered_queryset(queryset):
     operation_description="Создает новый товар в базе данных."
 )
 @api_view(['POST'])
+@permission_classes([IsAdmin])
 def create_datacenter_service(request):
     serializer = DatacenterServiceSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -92,17 +107,19 @@ def create_datacenter_service(request):
     operation_description="Возвращает список товаров с фильтрацией по цене."
 )
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def get_datacenter_service_list(request):
-    try:
-        mock_user = get_current_user()  # Используем внешнюю функцию
-    except ValueError as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # Проверяем, аутентифицирован ли пользователь
+    user = request.user if request.user.is_authenticated else None
 
+    # Получаем параметры фильтрации
     min_price = request.GET.get('datacenter_min_price')
     max_price = request.GET.get('datacenter_max_price')
 
+    # Получаем и фильтруем queryset
     datacenter_services = get_filtered_queryset(DatacenterService.objects.all())  # Фильтруем queryset
 
+    # Фильтрация по минимальной цене
     if min_price:
         try:
             min_price = float(min_price)
@@ -110,6 +127,7 @@ def get_datacenter_service_list(request):
         except ValueError:
             return Response({"error": "Некорректное значение для минимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Фильтрация по максимальной цене
     if max_price:
         try:
             max_price = float(max_price)
@@ -117,17 +135,23 @@ def get_datacenter_service_list(request):
         except ValueError:
             return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-    datacenter_draft_order = DatacenterOrder.objects.filter(creator=mock_user, status='draft').first()
+    # Инициализируем переменные для черновика
+    datacenter_draft_order_id = None
+    datacenter_services_count = 0
 
-    if datacenter_draft_order:
-        datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
-        datacenter_draft_order_id = datacenter_draft_order.id
-    else:
-        datacenter_services_count = 0
-        datacenter_draft_order_id = None
+    # Если пользователь аутентифицирован, проверяем наличие черновика
+    if user:
+        datacenter_draft_order = DatacenterOrder.objects.filter(creator=user, status='draft').first()
+        if datacenter_draft_order:
+            datacenter_services_count = sum(
+                datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
+            )
+            datacenter_draft_order_id = datacenter_draft_order.id
 
+    # Сериализуем список услуг датацентра
     datacenter_services_list = DatacenterServiceSerializer(datacenter_services, many=True).data
 
+    # Формируем ответ
     response_data = {
         'datacenters': datacenter_services_list,
         'draft_order_id': datacenter_draft_order_id,
@@ -142,9 +166,15 @@ def get_datacenter_service_list(request):
     operation_summary="Получить товар по ID",
 )
 @api_view(['GET'])
+@permission_classes([AllowAny])  # Разрешаем доступ любому пользователю
 def get_datacenter_service(request, pk):
+    # Получаем товар или возвращаем 404, если его нет
     datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
+    
+    # Сериализуем данные
     datacenter_service_data = DatacenterServiceSerializer(datacenter_service).data
+    
+    # Возвращаем ответ
     return Response(datacenter_service_data)
 
 @swagger_auto_schema(
@@ -154,6 +184,7 @@ def get_datacenter_service(request, pk):
     operation_summary="Обновить товар",
 )
 @api_view(['PUT'])
+@permission_classes([IsAdmin])
 def update_datacenter_service(request, pk):
     instance = get_object_or_404(DatacenterService.objects.all(), pk=pk)
 
@@ -176,6 +207,7 @@ def update_datacenter_service(request, pk):
     operation_summary="Удалить товар",
 )
 @api_view(['DELETE'])
+@permission_classes([IsAdmin])
 def delete_datacenter_service(request, pk):
     datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
 
@@ -206,19 +238,26 @@ def delete_datacenter_service(request, pk):
     operation_summary="Добавить товар в черновик заказа",
 )
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def add_to_draft(request, pk):
     datacenter_service = get_object_or_404(DatacenterService, id=pk)
 
-    try:
-        mock_user = get_current_user()  # Используем внешнюю функцию
-    except ValueError as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # Проверяем, авторизован ли пользователь
+    if not request.user.is_authenticated:
+        return Response(
+            {"error": "Пожалуйста, авторизуйтесь, чтобы добавить товар в корзину."},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
 
+    mock_user = request.user  # Получаем текущего пользователя
+
+    # Создаем или получаем черновик для данного пользователя
     datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
         creator=mock_user,
         status='draft'
     )
 
+    # Создаем или обновляем услугу в черновике
     datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
         order=datacenter_draft_order,
         service=datacenter_service,
@@ -226,20 +265,25 @@ def add_to_draft(request, pk):
     )
 
     if created:
+        # Если создаем новую запись, устанавливаем количество на 1
         datacenter_order_service.quantity = 1
     else:
+        # Если запись уже существует, увеличиваем количество на 1
         datacenter_order_service.quantity += 1
 
     datacenter_order_service.save()
 
+    # Обновляем общую стоимость черновика
     datacenter_draft_order.total_price = sum(
         datacenter_order_service.quantity * datacenter_order_service.service.price
         for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
     )
     datacenter_draft_order.save()
 
+    # Подсчитываем количество услуг в черновике
     datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
 
+    # Сериализуем черновик
     serializer = DatacenterOrderSerializer(datacenter_draft_order)
 
     return Response(
@@ -264,6 +308,7 @@ def add_to_draft(request, pk):
     operation_summary="Добавить изображение к товару",
 )
 @api_view(['POST'])
+@permission_classes([IsAdmin])
 def add_image(request, pk):
     datacenter_service = get_object_or_404(DatacenterService.objects.all(), id=pk)
 
@@ -291,7 +336,6 @@ def add_image(request, pk):
 
 
 
- # 1. GET /orders/ - Получение списка заказов
 @swagger_auto_schema(
     method='get',
     manual_parameters=[
@@ -304,12 +348,18 @@ def add_image(request, pk):
     operation_description="Возвращает список заказов с фильтрацией по статусу и дате создания."
 )
 @api_view(['GET'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def list_orders(request):
     status_filter = request.GET.get('datacenter_status')
     start_date = request.GET.get('datacenter_start_date')
     end_date = request.GET.get('datacenter_end_date')
 
+    # Начинаем с всех заказов, исключая удаленные и черновики
     datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
+
+    # Если пользователь не менеджер, фильтруем заказы по пользователю
+    if not request.user.is_staff and not request.user.is_superuser:
+        datacenter_orders = datacenter_orders.filter(creator=request.user)
 
     if status_filter:
         datacenter_orders = datacenter_orders.filter(status=status_filter)
@@ -325,8 +375,6 @@ def list_orders(request):
     serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-# 2. GET /orders/{id}/ - Получение конкретной заявки
 @swagger_auto_schema(
     method='get',
     responses={200: DatacenterOrderSerializer(), 404: "Заказ не найден"},
@@ -334,17 +382,27 @@ def list_orders(request):
     operation_description="Возвращает информацию о конкретном заказе по его ID."
 )
 @api_view(['GET'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def retrieve_order(request, pk):
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
+    # Проверка прав доступа
+    if request.user.is_staff or request.user.is_superuser:
+        # Менеджер или администратор может видеть любой заказ
+        serializer = DatacenterOrderSerializer(datacenter_order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    # Если пользователь не менеджер, проверяем, принадлежит ли заказ пользователю
+    if datacenter_order.creator != request.user:
+        return Response({'error': 'У вас нет прав на просмотр этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
+
     serializer = DatacenterOrderSerializer(datacenter_order)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-# 3. DELETE /orders/{id}/ - Удаление заявки
 @swagger_auto_schema(
     method='delete',
     responses={204: "Заказ удалён", 404: "Заказ не найден", 400: "Невозможно удалить"},
@@ -352,12 +410,25 @@ def retrieve_order(request, pk):
     operation_description="Помечает заказ как удалённый."
 )
 @api_view(['DELETE'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def delete_order(request, pk):
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ уже удалён.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Проверка прав доступа
+    if request.user.is_staff or request.user.is_superuser:
+        # Менеджер или администратор может удалить заказ
+        datacenter_order.status = 'deleted'
+        datacenter_order.save()
+        return Response({'message': 'Заказ успешно удалён.'}, status=status.HTTP_204_NO_CONTENT)
+
+    # Проверяем, принадлежит ли заказ пользователю
+    if datacenter_order.creator != request.user:
+        return Response({'error': 'У вас нет прав на удаление этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Если это пользователь-владелец заказа, то удаляем его
     datacenter_order.status = 'deleted'
     datacenter_order.save()
 
@@ -372,11 +443,16 @@ def delete_order(request, pk):
     operation_description="Подтверждает заказ по его ID."
 )
 @api_view(['PUT'])
+@permission_classes([IsAuthenticated])  # Проверка на аутентификацию
 def submit_order(request, pk):
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status != 'draft':
         return Response({'error': 'Заказ уже был отправлен или не может быть отправлен.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Проверка, является ли текущий пользователь создателем заказа
+    if datacenter_order.creator != request.user:
+        return Response({'error': 'У вас нет прав на подтверждение этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
     delivery_address = datacenter_order.delivery_address
     delivery_time = datacenter_order.delivery_time
@@ -387,6 +463,7 @@ def submit_order(request, pk):
     if not delivery_time:
         return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Изменяем статус заказа на 'formed'
     datacenter_order.status = 'formed'
     datacenter_order.formation_date = timezone.now()
     datacenter_order.save()
@@ -410,6 +487,7 @@ def submit_order(request, pk):
     operation_description="Завершает или отклоняет заказ по его ID."
 )
 @api_view(['PUT'])
+@permission_classes([IsManager]) 
 def finalize_order(request, pk):
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
@@ -444,13 +522,22 @@ def finalize_order(request, pk):
     operation_description="Обновляет данные заказа по его ID."
 )
 @api_view(['PUT'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def update_order(request, pk):
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Обновление удалённых заказов невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+    # Проверяем права доступа
+    if request.user.is_staff or request.user.is_superuser:
+        # Менеджер или администратор может обновить заказ
+        serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+    elif datacenter_order.creator == request.user:
+        # Владелец заказа может обновить только свой заказ
+        serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+    else:
+        return Response({'error': 'У вас нет прав на обновление этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
     if serializer.is_valid():
         serializer.save()
@@ -460,7 +547,6 @@ def update_order(request, pk):
     print(serializer.errors)  # Печатаем ошибки в консоль
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# DELETE: Удаление услуги из заказа
 @swagger_auto_schema(
     method='delete',
     operation_description="Удаление товара из заказа",
@@ -472,6 +558,7 @@ def update_order(request, pk):
     }
 )
 @api_view(['DELETE'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def delete_service_from_order(request, datacenter_order_id, datacenter_service_id):
     datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
 
@@ -494,7 +581,6 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
     return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
 
 
-# PUT: Изменение количества услуги в заказе
 @swagger_auto_schema(
     method='put',
     operation_description="Изменение количества товаров в заказе",
@@ -512,6 +598,7 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
     }
 )
 @api_view(['PUT'])
+@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
 def update_service_quantity_in_order(request, datacenter_order_id, datacenter_service_id):
     datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
     datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
@@ -538,109 +625,127 @@ def update_service_quantity_in_order(request, datacenter_order_id, datacenter_se
 
     return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
 
-# POST: Регистрация пользователя
+
+
+logger = logging.getLogger(__name__)
+
+User = get_user_model()
+
+'''@api_view(['GET'])
+@permission_classes([IsManagerOrAdmin])  # Доступ только для менеджеров и администраторов
+def list_users(request):
+    users = User.objects.all()  # Получаем всех пользователей
+    serializer = UserSerializer(users, many=True)  # Сериализуем пользователей
+    return Response(serializer.data, status=status.HTTP_200_OK)'''
+
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Регистрация пользователя",
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
-            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
-            'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email адрес'),
-        },
-        required=['username', 'password', 'email'],
-    ),
+    request_body=UserSerializer,
     responses={
-        201: openapi.Response(description='Пользователь успешно зарегистрирован'),
-        400: openapi.Response(description='Ошибка валидации'),
+        201: openapi.Response('Пользователь успешно зарегистрирован', 
+                              schema=openapi.Schema(type=openapi.TYPE_OBJECT, 
+                                                    properties={
+                                                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя'),
+                                                        'is_staff': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Является ли пользователь менеджером'),
+                                                        'is_superuser': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Является ли пользователь администратором'),
+                                                    })),
+        400: 'Ошибка валидации данных'
     },
+    operation_summary="Регистрация пользователя",
+    operation_description="Создает нового пользователя с указанными данными."
 )
 @api_view(['POST'])
-def register_user(request):
-    data = request.data
-    username = data.get('username')
-    password = data.get('password')
-    email = data.get('email')
+@permission_classes([AllowAny])  # Для регистрации без аутентификации
+def create_user(request):
+    serializer = UserSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        return Response(
+            {
+                "email": user.email,
+                "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser,
+            },
+            status=status.HTTP_201_CREATED
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    if User.objects.filter(username=username).exists():
-        return Response({'error': 'Пользователь с таким именем уже существует'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-        return Response({'error': 'Неверный формат email'}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=username, password=password, email=email)
-    return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
-
-# PUT: Обновление информации о пользователе
-@swagger_auto_schema(
-    method='put',
-    operation_description="Обновление информации о пользователе",
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
-            'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email адрес'),
-            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
-        },
-        required=[],
-    ),
-    responses={
-        200: openapi.Response(description='Информация о пользователе успешно обновлена'),
-        404: openapi.Response(description='Пользователь не найден'),
-    },
-)
-@api_view(['PUT'])
-def update_user(request, pk):
-    user = get_object_or_404(User, id=pk)
-    data = request.data
-
-    user.username = data.get('username', user.username)
-    user.email = data.get('email', user.email)
-    if 'password' in data:
-        user.set_password(data['password'])
-    user.save()
-
-    return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
-
-# POST: Вход пользователя
 @swagger_auto_schema(
     method='post',
-    operation_description="Вход пользователя",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
-            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Имя пользователя'),
-            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль'),
+            'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Пароль пользователя'),
         },
-        required=['username', 'password'],
+        required=['email', 'password']
     ),
     responses={
-        200: openapi.Response(description='Пользователь успешно вошел в систему'),
-        401: openapi.Response(description='Неверное имя пользователя или пароль'),
+        200: openapi.Response('Успешный вход', 
+                              schema=openapi.Schema(type=openapi.TYPE_OBJECT, 
+                                                    properties={'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя')})),
+        401: 'Неверный email или пароль.'
     },
+    operation_summary="Вход пользователя",
+    operation_description="Аутентификация пользователя по email и паролю."
 )
 @api_view(['POST'])
+@permission_classes([AllowAny])  # Для входа без ограничений
 def login_user(request):
-    data = request.data
-    username = data.get('username')
-    password = data.get('password')
+    email = request.data.get('email')
+    password = request.data.get('password')
 
-    user = authenticate(request, username=username, password=password)
+    logger.info(f"Attempting login with email: {email}")  # Логирование
+    user = authenticate(request, email=email, password=password)
     if user is not None:
-        login(request, user)
-        return Response({'message': 'Пользователь успешно вошел в систему'}, status=status.HTTP_200_OK)
-    return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_401_UNAUTHORIZED)
+        logger.info(f"Login successful for email: {email}")  # Логирование успешного входа
+        return Response({'email': user.email}, status=status.HTTP_200_OK)
+    
+    logger.warning(f"Login failed for email: {email}")  # Логирование
+    return Response({'detail': 'Invalid email/password.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-# POST: Выход пользователя
+
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Выход пользователя",
     responses={
-        200: openapi.Response(description='Пользователь успешно вышел из системы'),
+        200: 'Успешный выход из системы'
     },
+    operation_summary="Выход пользователя",
+    operation_description="Разлогинивает пользователя."
 )
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])  # Доступ только для менеджеров и администраторов
 def logout_user(request):
     logout(request)
-    return Response({'message': 'Пользователь успешно вышел из системы'}, status=status.HTTP_200_OK)
+    return Response({'status': 'Success'}, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='put',
+    request_body=UserSerializer,
+    responses={
+        200: 'Информация о пользователе успешно обновлена',
+        404: 'Пользователь не найден.',
+        400: 'Ошибка валидации данных'
+    },
+    operation_summary="Обновление информации о пользователе",
+    operation_description="Частично обновляет данные пользователя по его ID."
+)
+@api_view(['PUT'])
+@permission_classes([IsManagerOrAdmin])  # Доступ только для менеджеров и администраторов
+def update_user(request, user_id):
+    try:
+        user = User.objects.get(id=user_id)  # Получаем пользователя по ID
+    except User.DoesNotExist:
+        return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = UserSerializer(user, data=request.data, partial=True)  # Частичное обновление
+    if serializer.is_valid():
+        serializer.save()
+        return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

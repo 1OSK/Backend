@@ -2,7 +2,11 @@ from rest_framework import serializers
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService, AuthUser, CustomUser
 from collections import OrderedDict
 from datetime import datetime
-# Сериализатор для услуги
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+
+from django.contrib.auth import authenticate
+from .models import CustomUser
 class DatacenterServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = DatacenterService
@@ -107,6 +111,40 @@ class DatacenterServiceImageSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     is_staff = serializers.BooleanField(default=False, required=False)
     is_superuser = serializers.BooleanField(default=False, required=False)
+    password = serializers.CharField(write_only=True)
     class Meta:
         model = CustomUser
         fields = ['email', 'password', 'is_staff', 'is_superuser']
+    def create(self, validated_data):
+        # Хешируем пароль перед сохранением
+        validated_data['password'] = make_password(validated_data['password'])
+        return super().create(validated_data)
+        
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ['email', 'password']
+
+    def create(self, validated_data):
+        user = CustomUser(
+            email=validated_data['email'],
+        )
+        user.set_password(validated_data['password'])  # Устанавливаем пароль
+        user.save()
+        return user
+
+User = get_user_model()
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField()
+
+    def validate(self, data):
+        user = authenticate(email=data['email'], password=data['password'])
+        if user is None:
+            raise serializers.ValidationError("Invalid email or password.")
+        data['user'] = user
+        return data

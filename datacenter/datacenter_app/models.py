@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from datetime import datetime
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.conf import settings
 class DatacenterService(models.Model):
    
     STATUS_CHOICES = [
@@ -46,8 +47,8 @@ class DatacenterOrder(models.Model):
     creation_date = models.DateTimeField(default=timezone.now)
     formation_date = models.DateTimeField(null=True, blank=True)
     completion_date = models.DateTimeField(null=True, blank=True)
-    creator = models.ForeignKey(User, related_name='orders_created', on_delete=models.CASCADE)
-    moderator = models.ForeignKey(User, related_name='orders_moderated', on_delete=models.SET_NULL, null=True, blank=True)
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='orders_created', on_delete=models.CASCADE)
+    moderator = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='orders_moderated', on_delete=models.SET_NULL, null=True, blank=True)
     delivery_address = models.CharField(max_length=255, blank=True, null=True)  
     delivery_time = models.DateTimeField(null=True, blank=True)  
     total_price = models.PositiveIntegerField(null=True, blank=True)
@@ -107,38 +108,19 @@ class NewUserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
-        """Создание суперпользователя"""
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
 
         return self.create_user(email, password, **extra_fields)
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    email = models.EmailField("email адрес", unique=True)
-    password = models.CharField(max_length=50, verbose_name="Пароль")
+    email = models.EmailField(max_length=255, unique=True)
     is_staff = models.BooleanField(default=False, verbose_name="Является ли пользователь менеджером?")
     is_superuser = models.BooleanField(default=False, verbose_name="Является ли пользователь админом?")
 
     USERNAME_FIELD = 'email'
 
     objects = NewUserManager()
-
-    # Указываем related_name для предотвращения конфликта
-    groups = models.ManyToManyField(
-        'auth.Group',
-        related_name='customuser_set',  # Измените на уникальное имя
-        blank=True,
-        help_text='Группы, к которым принадлежит пользователь.',
-        verbose_name='Группы'
-    )
-
-    user_permissions = models.ManyToManyField(
-        'auth.Permission',
-        related_name='customuser_set',  # Измените на уникальное имя
-        blank=True,
-        help_text='Разрешения, присвоенные пользователю.',
-        verbose_name='Разрешения'
-    )
 
     def __str__(self):
         return self.email

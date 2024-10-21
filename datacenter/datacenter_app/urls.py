@@ -5,6 +5,12 @@ from rest_framework import permissions
 from django.urls import path, include
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from . import views
+
+
+
+
+
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -20,6 +26,10 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+
+    
+    
+    
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     
     path('datacenter-services/', get_datacenter_service_list, name='datacenter_service_list'),  # Путь для списка услуг
@@ -54,12 +64,13 @@ urlpatterns = [
     # PUT: Изменение количества услуги в заказе
     path('datacenter-orders-services/<int:datacenter_order_id>/datacenter-services/<int:datacenter_service_id>/update/', update_service_quantity_in_order, name='update_service_quantity_in_order'),
     
-    path('users/register/', register_user, name='register_user'),
     
-    path('users/login/', login_user, name='login_user'),
     
-    path('users/logout/', logout_user, name='logout_user'),
+
     
-    path('users/update/<int:pk>/', update_user, name='update_user'),
+    path('users/', create_user, name='create_user'),  # Создание пользователя
+    path('users/login/', login_user, name='login_user'),  # Вход пользователя
+    path('users/logout/', logout_user, name='logout_user'),  # Выход пользователя
+    path('users/<int:user_id>/', update_user, name='update_user'),  # Обновление пользователя по ID
     
 ]

@@ -27,7 +27,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 CORS_ALLOW_ALL_ORIGINS = True
-
+AUTH_USER_MODEL = 'datacenter_app.CustomUser'  # Укажите имя вашего приложения и модели
 # Application definition
 
 INSTALLED_APPS = [
@@ -55,10 +55,11 @@ MIDDLEWARE = [
 ]
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ]
 }
 # Отключение CSRF защиты
