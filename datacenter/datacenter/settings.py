@@ -11,10 +11,10 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os  # Добавлено для использования os.path.join
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -27,9 +27,15 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 CORS_ALLOW_ALL_ORIGINS = True
-AUTH_USER_MODEL = 'datacenter_app.CustomUser'  # Укажите имя вашего приложения и модели
-# Application definition
 
+REDIS_HOST = '0.0.0.0'
+REDIS_PORT = 6379
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_ALLOW_ALL = True
+AUTH_USER_MODEL = 'datacenter_app.CustomUser'  # Убедитесь, что ваша модель кастомизирована
+
+# Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -41,18 +47,20 @@ INSTALLED_APPS = [
     'storages',
     'rest_framework',
     'corsheaders',
-   'drf_yasg',
+    'drf_yasg',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',  # Добавлено для CSRF защиты
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
 ]
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication',
@@ -62,12 +70,14 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ]
 }
-# Отключение CSRF защиты
-CSRF_COOKIE_SECURE = False
-CSRF_USE_SESSIONS = False
-CSRF_COOKIE_HTTPONLY = False
+
+# Отключение CSRF защиты - рекомендую удалить, если не нужно
+# CSRF_COOKIE_SECURE = False
+# CSRF_USE_SESSIONS = False
+# CSRF_COOKIE_HTTPONLY = False
+
 ROOT_URLCONF = 'datacenter.urls'
-import os
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -86,7 +96,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'datacenter.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -100,6 +109,7 @@ DATABASES = {
         'PORT': '5434',  # Используйте 5434 для подключения из вашего приложения
     }
 }
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
@@ -118,38 +128,30 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-#minio
-# settings.py
-
+# MinIO settings
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-
-
 
 AWS_STORAGE_BUCKET_NAME = 'something'
 AWS_ACCESS_KEY_ID = 'minio'
 AWS_SECRET_ACCESS_KEY = 'minio124'
-AWS_S3_ENDPOINT_URL = 'localhost:9000'
+AWS_S3_ENDPOINT_URL = 'http://localhost:9000'  # Добавлен http:// для корректного URL
 MINIO_USE_SSL = False

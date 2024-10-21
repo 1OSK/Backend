@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DatacenterService, DatacenterOrder, DatacenterOrderService, AuthUser, CustomUser
+from .models import DatacenterService, DatacenterOrder, DatacenterOrderService, CustomUser
 from collections import OrderedDict
 from datetime import datetime
 from django.contrib.auth import get_user_model
@@ -35,13 +35,12 @@ class DatacenterOrderServiceSerializer(serializers.ModelSerializer):
         return new_fields
 
 class DatacenterOrderSerializer(serializers.ModelSerializer):
-    creator_name = serializers.CharField(source='creator.username', read_only=True)  # Имя создателя
-    moderator_name = serializers.CharField(source='moderator.username', read_only=True, allow_null=True)  # Имя модератора
+    creator_name = serializers.CharField(source='creator.email', read_only=True)
+    moderator_name = serializers.CharField(source='moderator.email', read_only=True, allow_null=True, label="Email модератора")
     services = DatacenterOrderServiceSerializer(many=True, source='datacenterorderservice_set')  # Связь с услугами
     creation_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', read_only=True)
     formation_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', allow_null=True, required=False)
     completion_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', allow_null=True, required=False)
-    delivery_time = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', allow_null=True, required=False)
 
     class Meta:
         model = DatacenterOrder
@@ -51,8 +50,8 @@ class DatacenterOrderSerializer(serializers.ModelSerializer):
             'creation_date', 
             'formation_date', 
             'completion_date', 
-            'creator_name', 
-            'moderator_name', 
+            'creator_name',  # Имя создателя
+            'moderator_name',  # Email модератора
             'delivery_address', 
             'delivery_time', 
             'total_price', 
@@ -68,7 +67,7 @@ class DatacenterOrderSerializer(serializers.ModelSerializer):
         return new_fields
 
 
-# Сериализатор для пользователя
+'''# Сериализатор для пользователя
 class AuthUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuthUser
@@ -92,7 +91,7 @@ class AuthUserSerializer(serializers.ModelSerializer):
         for name, field in super().get_fields().items():
             field.required = False  # Делаем поле необязательным
             new_fields[name] = field
-        return new_fields
+        return new_fields'''
 
 # Сериализатор для изображений услуг
 class DatacenterServiceImageSerializer(serializers.ModelSerializer):

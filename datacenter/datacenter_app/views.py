@@ -1,4 +1,5 @@
 
+from sqlite3 import IntegrityError
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -36,6 +37,21 @@ from rest_framework.exceptions import AuthenticationFailed
 from .permissions import IsManagerOrAdmin, IsAdmin, IsManager, IsAuthenticatedAndManagerOrOwnOrders
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
+from django.conf import settings
+import redis
+from django.contrib.auth import authenticate, login
+from django.http import HttpResponse
+import uuid
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from .middleware import CookiePermissionMiddleware
+from django.http import JsonResponse
+from .redis import redis_client 
+
+session_storage = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+
+
+
 def get_current_user(request):
     """Получаем текущего пользователя"""
     
@@ -109,15 +125,36 @@ def create_datacenter_service(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_datacenter_service_list(request):
-    # Проверяем, аутентифицирован ли пользователь
-    user = request.user if request.user.is_authenticated else None
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Инициализируем переменные для черновика
+    datacenter_draft_order_id = None
+    datacenter_services_count = 0
+
+    # Проверяем, есть ли session_id в хранилище Redis и извлекаем user_id
+    if session_id:
+        user_id = session_storage.get(session_id)
+
+        if user_id:
+            user_id = user_id.decode('utf-8')
+
+            # Если пользователь аутентифицирован (по наличию записи в Redis)
+            # Ищем черновой заказ для этого пользователя
+            datacenter_draft_order = DatacenterOrder.objects.filter(creator_id=user_id, status='draft').first()
+
+            if datacenter_draft_order:
+                datacenter_services_count = sum(
+                    service.quantity for service in datacenter_draft_order.datacenterorderservice_set.all()
+                )
+                datacenter_draft_order_id = datacenter_draft_order.id
 
     # Получаем параметры фильтрации
     min_price = request.GET.get('datacenter_min_price')
     max_price = request.GET.get('datacenter_max_price')
 
     # Получаем и фильтруем queryset
-    datacenter_services = get_filtered_queryset(DatacenterService.objects.all())  # Фильтруем queryset
+    datacenter_services = DatacenterService.objects.all()
 
     # Фильтрация по минимальной цене
     if min_price:
@@ -135,19 +172,6 @@ def get_datacenter_service_list(request):
         except ValueError:
             return Response({"error": "Некорректное значение для максимальной цены"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Инициализируем переменные для черновика
-    datacenter_draft_order_id = None
-    datacenter_services_count = 0
-
-    # Если пользователь аутентифицирован, проверяем наличие черновика
-    if user:
-        datacenter_draft_order = DatacenterOrder.objects.filter(creator=user, status='draft').first()
-        if datacenter_draft_order:
-            datacenter_services_count = sum(
-                datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
-            )
-            datacenter_draft_order_id = datacenter_draft_order.id
-
     # Сериализуем список услуг датацентра
     datacenter_services_list = DatacenterServiceSerializer(datacenter_services, many=True).data
 
@@ -158,7 +182,7 @@ def get_datacenter_service_list(request):
         'datacenters_count': datacenter_services_count
     }
 
-    return Response(response_data)
+    return Response(response_data, status=status.HTTP_200_OK)
 
 @swagger_auto_schema(
     method='get',
@@ -242,20 +266,29 @@ def delete_datacenter_service(request, pk):
 def add_to_draft(request, pk):
     datacenter_service = get_object_or_404(DatacenterService, id=pk)
 
-    # Проверяем, авторизован ли пользователь
-    if not request.user.is_authenticated:
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
         return Response(
-            {"error": "Пожалуйста, авторизуйтесь, чтобы добавить товар в корзину."},
+            {"error": "Пожалуйста, авторизуйтесь, чтобы добавить товар в черновик."},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    mock_user = request.user  # Получаем текущего пользователя
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
 
-    # Создаем или получаем черновик для данного пользователя
+    # Получаем или создаем черновик для данного пользователя
     datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
-        creator=mock_user,
+        creator_id=user_id,
         status='draft'
     )
+
+    if created:
+        print(f"Created new draft order for user_id: {user_id} with id: {datacenter_draft_order.id}")
+    else:
+        print(f"Using existing draft order for user_id: {user_id} with id: {datacenter_draft_order.id}")
 
     # Создаем или обновляем услугу в черновике
     datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
@@ -264,33 +297,30 @@ def add_to_draft(request, pk):
         defaults={'quantity': 0}
     )
 
+    # Обновляем количество товара
     if created:
-        # Если создаем новую запись, устанавливаем количество на 1
-        datacenter_order_service.quantity = 1
+        datacenter_order_service.quantity = 1  # Устанавливаем количество на 1
     else:
-        # Если запись уже существует, увеличиваем количество на 1
-        datacenter_order_service.quantity += 1
+        datacenter_order_service.quantity += 1  # Увеличиваем количество на 1
 
     datacenter_order_service.save()
 
     # Обновляем общую стоимость черновика
     datacenter_draft_order.total_price = sum(
-        datacenter_order_service.quantity * datacenter_order_service.service.price
-        for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all()
+        service.quantity * service.service.price
+        for service in datacenter_draft_order.datacenterorderservice_set.all()
     )
     datacenter_draft_order.save()
 
-    # Подсчитываем количество услуг в черновике
-    datacenter_services_count = sum(datacenter_order_service.quantity for datacenter_order_service in datacenter_draft_order.datacenterorderservice_set.all())
-
     # Сериализуем черновик
     serializer = DatacenterOrderSerializer(datacenter_draft_order)
+    
+    print(f"Draft order created with creator: {datacenter_draft_order.creator.email}")  # Изменено на email
 
     return Response(
         {
             'message': 'Товар добавлен в черновик заказа',
-            'draft_order': serializer.data,
-            'datacenters_count': datacenter_services_count
+            'draft_order': serializer.data
         },
         status=status.HTTP_201_CREATED
     )
@@ -348,8 +378,22 @@ def add_image(request, pk):
     operation_description="Возвращает список заказов с фильтрацией по статусу и дате создания."
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([IsAuthenticated])
 def list_orders(request):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {"error": "Сессия не найдена или истекла. Авторизуйтесь, чтобы получить доступ."},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+
+    # Фильтры
     status_filter = request.GET.get('datacenter_status')
     start_date = request.GET.get('datacenter_start_date')
     end_date = request.GET.get('datacenter_end_date')
@@ -357,13 +401,15 @@ def list_orders(request):
     # Начинаем с всех заказов, исключая удаленные и черновики
     datacenter_orders = DatacenterOrder.objects.exclude(status__in=['deleted', 'draft'])
 
-    # Если пользователь не менеджер, фильтруем заказы по пользователю
+    # Если пользователь не менеджер или администратор, фильтруем заказы по пользователю
     if not request.user.is_staff and not request.user.is_superuser:
-        datacenter_orders = datacenter_orders.filter(creator=request.user)
+        datacenter_orders = datacenter_orders.filter(creator_id=user_id)
 
+    # Фильтрация по статусу
     if status_filter:
         datacenter_orders = datacenter_orders.filter(status=status_filter)
 
+    # Фильтрация по дате
     if start_date and end_date:
         try:
             start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
@@ -372,6 +418,7 @@ def list_orders(request):
         except ValueError:
             return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Сериализуем результат
     serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -382,10 +429,25 @@ def list_orders(request):
     operation_description="Возвращает информацию о конкретном заказе по его ID."
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([AllowAny])  # Внешний доступ проверяется через сессии и права
 def retrieve_order(request, pk):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы просматривать заказы.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
+    # Проверяем статус заказа
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -394,11 +456,12 @@ def retrieve_order(request, pk):
         # Менеджер или администратор может видеть любой заказ
         serializer = DatacenterOrderSerializer(datacenter_order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     # Если пользователь не менеджер, проверяем, принадлежит ли заказ пользователю
-    if datacenter_order.creator != request.user:
+    if str(datacenter_order.creator_id) != user_id:
         return Response({'error': 'У вас нет прав на просмотр этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
+    # Сериализуем заказ и возвращаем данные
     serializer = DatacenterOrderSerializer(datacenter_order)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -410,32 +473,45 @@ def retrieve_order(request, pk):
     operation_description="Помечает заказ как удалённый."
 )
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([IsAuthenticated])  # Теперь только аутентифицированные пользователи могут удалять заказы
 def delete_order(request, pk):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы удалять заказы.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ уже удалён.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Проверка прав доступа
+    # Проверка прав доступа: менеджер или администратор
     if request.user.is_staff or request.user.is_superuser:
         # Менеджер или администратор может удалить заказ
         datacenter_order.status = 'deleted'
         datacenter_order.save()
         return Response({'message': 'Заказ успешно удалён.'}, status=status.HTTP_204_NO_CONTENT)
 
-    # Проверяем, принадлежит ли заказ пользователю
-    if datacenter_order.creator != request.user:
+    # Если это не менеджер, проверяем, принадлежит ли заказ пользователю
+    if str(datacenter_order.creator_id) != user_id:
         return Response({'error': 'У вас нет прав на удаление этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
-    # Если это пользователь-владелец заказа, то удаляем его
+    # Если это пользователь-владелец заказа, помечаем его как удалённый
     datacenter_order.status = 'deleted'
     datacenter_order.save()
 
     return Response({'message': 'Заказ успешно удалён.'}, status=status.HTTP_204_NO_CONTENT)
 
 
-# 4. PUT /orders/{id}/submit/ - Подтверждение заявки
 @swagger_auto_schema(
     method='put',
     responses={200: "Заказ подтверждён", 404: "Заказ не найден", 400: "Ошибка подтверждения"},
@@ -443,15 +519,29 @@ def delete_order(request, pk):
     operation_description="Подтверждает заказ по его ID."
 )
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])  # Проверка на аутентификацию
+@permission_classes([AllowAny])  # Внешняя проверка на уровне сессий
 def submit_order(request, pk):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы подтвердить заказ.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status != 'draft':
         return Response({'error': 'Заказ уже был отправлен или не может быть отправлен.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Проверка, является ли текущий пользователь создателем заказа
-    if datacenter_order.creator != request.user:
+    if str(datacenter_order.creator_id) != user_id:
         return Response({'error': 'У вас нет прав на подтверждение этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
     delivery_address = datacenter_order.delivery_address
@@ -472,7 +562,6 @@ def submit_order(request, pk):
     return Response({'message': 'Заказ подтверждён успешно', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
 
 
-# 5. PUT /orders/{id}/finalize/ - Завершение или отклонение заявки
 @swagger_auto_schema(
     method='put',
     request_body=openapi.Schema(
@@ -487,18 +576,28 @@ def submit_order(request, pk):
     operation_description="Завершает или отклоняет заказ по его ID."
 )
 @api_view(['PUT'])
-@permission_classes([IsManager]) 
+@permission_classes([IsAuthenticated])  # Разрешаем только аутентифицированным пользователям
 def finalize_order(request, pk):
+    # Получаем текущего пользователя
+    user = get_current_user(request)
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ удален и не может быть завершен.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Получаем действие из тела запроса
     action = request.data.get('action')
 
     if not action or action not in ['completed', 'rejected']:
         return Response({'error': 'Некорректное действие.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Проверяем, является ли пользователь менеджером (is_staff)
+    if not user.is_staff:
+        return Response({'error': 'У вас нет прав для выполнения этого действия.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Обработка завершения или отклонения заявки
     if action == 'completed':
         datacenter_order.status = 'completed'
         datacenter_order.completion_date = timezone.now()
@@ -506,9 +605,17 @@ def finalize_order(request, pk):
         datacenter_order.status = 'rejected'
         datacenter_order.completion_date = timezone.now()
 
-    datacenter_order.save()
-    return Response({'message': f'Заявка успешно {action}.'}, status=status.HTTP_200_OK)
+    # Устанавливаем модератора как текущего пользователя
+    datacenter_order.moderator = user  # Присваиваем экземпляр пользователя
 
+    try:
+        datacenter_order.save()  # Сохраняем изменения
+    except IntegrityError as e:
+        return Response({'error': 'Ошибка сохранения заказа: {}'.format(str(e))}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Сериализуем и возвращаем данные о заказе
+    serializer = DatacenterOrderSerializer(datacenter_order)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 @swagger_auto_schema(
     method='put',
@@ -522,30 +629,43 @@ def finalize_order(request, pk):
     operation_description="Обновляет данные заказа по его ID."
 )
 @api_view(['PUT'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([AllowAny])  # Внешняя проверка на уровне сессий
 def update_order(request, pk):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы обновить заказ.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+    user = get_object_or_404(User, id=user_id)  # Получаем пользователя по user_id
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Обновление удалённых заказов невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Проверяем права доступа
-    if request.user.is_staff or request.user.is_superuser:
-        # Менеджер или администратор может обновить заказ
-        serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
-    elif datacenter_order.creator == request.user:
-        # Владелец заказа может обновить только свой заказ
+    # Проверяем права доступа (менеджер или владелец заказа)
+    if user.is_staff or datacenter_order.creator == user:
+        # Инициализируем сериализатор с частичным обновлением (partial=True)
         serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
     else:
         return Response({'error': 'У вас нет прав на обновление этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
+    # Проверяем, валидны ли данные
     if serializer.is_valid():
-        serializer.save()
+        serializer.save()  # Сохраняем обновления
         return Response({'message': 'Заказ обновлён успешно', 'data': serializer.data}, status=status.HTTP_200_OK)
 
-    # Отладочная информация
-    print(serializer.errors)  # Печатаем ошибки в консоль
+    # Возвращаем ошибки, если данные невалидны
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 @swagger_auto_schema(
     method='delete',
@@ -558,23 +678,45 @@ def update_order(request, pk):
     }
 )
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([AllowAny])  # Проверка на уровне сессий
 def delete_service_from_order(request, datacenter_order_id, datacenter_service_id):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы удалить товар из заказа.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+    user = get_object_or_404(User, id=user_id)  # Получаем пользователя по user_id
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
 
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Заказ удален, нельзя удалить товар'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Проверяем, имеет ли пользователь право удалять товар
+    if not (user.is_staff or datacenter_order.creator == user):
+        return Response({'error': 'У вас нет прав на удаление товара из этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Получаем услугу из заказа
     datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
 
     datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
 
     if datacenter_order_service:
         if datacenter_order_service.quantity > 1:
+            # Уменьшаем количество товара
             datacenter_order_service.quantity -= 1
             datacenter_order_service.save()
             return Response({'message': 'Количество товаров уменьшено на 1'}, status=status.HTTP_200_OK)
         else:
+            # Удаляем товар, если количество 1
             datacenter_order_service.delete()
             return Response({'message': 'Товар удален из заказа'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -598,11 +740,33 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
     }
 )
 @api_view(['PUT'])
-@permission_classes([IsAuthenticatedAndManagerOrOwnOrders])  # Проверка прав доступа
+@permission_classes([AllowAny])  # Проверка на уровне сессий
 def update_service_quantity_in_order(request, datacenter_order_id, datacenter_service_id):
+    # Получаем session_id из куки
+    session_id = request.COOKIES.get('session_id')
+
+    # Проверяем, есть ли session_id в Redis
+    if not session_id or not session_storage.get(session_id):
+        return Response(
+            {'error': 'Пожалуйста, авторизуйтесь, чтобы изменить количество товаров в заказе.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Получаем user_id из Redis
+    user_id = session_storage.get(session_id).decode('utf-8')
+    user = get_object_or_404(User, id=user_id)  # Получаем пользователя по user_id
+
+    # Получаем заказ по ID
     datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+
+    # Проверяем права доступа
+    if not (user.is_staff or datacenter_order.creator == user):
+        return Response({'error': 'У вас нет прав на изменение количества товаров в этом заказе.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Получаем услугу из заказа
     datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
 
+    # Получаем запись о товаре в заказе
     datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
 
     if datacenter_order_service:
@@ -619,6 +783,7 @@ def update_service_quantity_in_order(request, datacenter_order_id, datacenter_se
         except ValueError:
             return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Обновляем количество товара
         datacenter_order_service.quantity = new_quantity
         datacenter_order_service.save()
         return Response({'message': 'Количество товаров обновлено в заказе'}, status=status.HTTP_200_OK)
@@ -673,6 +838,11 @@ def create_user(request):
 
 
 
+logger = logging.getLogger(__name__)
+
+# Подключение к экземпляру Redis
+session_storage = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+
 @swagger_auto_schema(
     method='post',
     request_body=openapi.Schema(
@@ -698,13 +868,19 @@ def login_user(request):
     email = request.data.get('email')
     password = request.data.get('password')
 
-    logger.info(f"Attempting login with email: {email}")  # Логирование
     user = authenticate(request, email=email, password=password)
-    if user is not None:
-        logger.info(f"Login successful for email: {email}")  # Логирование успешного входа
-        return Response({'email': user.email}, status=status.HTTP_200_OK)
     
-    logger.warning(f"Login failed for email: {email}")  # Логирование
+    if user is not None:
+        session_id = str(uuid.uuid4())  # Генерация уникального идентификатора сессии
+        
+        # Сохраняем идентификатор пользователя в Redis
+        redis_client.set(session_id, user.id)  # Сохраняем ID пользователя вместо email
+        
+        response = Response({'email': user.email}, status=status.HTTP_200_OK)
+        response.set_cookie(key='session_id', value=session_id, httponly=True)
+        return response
+
+    logger.warning(f"Invalid login attempt for email: {email}")
     return Response({'detail': 'Invalid email/password.'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
@@ -718,8 +894,17 @@ def login_user(request):
     operation_description="Разлогинивает пользователя."
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  # Доступ только для менеджеров и администраторов
+@permission_classes([IsAuthenticated])  # Доступ только для аутентифицированных пользователей
 def logout_user(request):
+    session_id = request.COOKIES.get('session_id')
+
+    if not session_id:
+        return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Удаляем идентификатор пользователя из Redis
+    redis_client.delete(session_id)
+
+    # Выход из системы
     logout(request)
     return Response({'status': 'Success'}, status=status.HTTP_200_OK)
 
@@ -736,16 +921,46 @@ def logout_user(request):
     operation_description="Частично обновляет данные пользователя по его ID."
 )
 @api_view(['PUT'])
-@permission_classes([IsManagerOrAdmin])  # Доступ только для менеджеров и администраторов
+@permission_classes([IsAuthenticated])
 def update_user(request, user_id):
-    try:
-        user = User.objects.get(id=user_id)  # Получаем пользователя по ID
-    except User.DoesNotExist:
-        return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+    session_id = request.COOKIES.get('session_id')
 
-    serializer = UserSerializer(user, data=request.data, partial=True)  # Частичное обновление
+    if not session_id:
+        logger.warning("Session ID is missing.")
+        return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Получаем идентификатор пользователя из Redis по session_id
+    user_id_from_session = redis_client.get(session_id)
+
+    if user_id_from_session is None:
+        logger.warning("Invalid session.")
+        return Response({'detail': 'Недействительная сессия.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Декодируем идентификатор пользователя
+    user_id_from_session = user_id_from_session.decode('utf-8') if isinstance(user_id_from_session, bytes) else user_id_from_session
+
+    try:
+        user = User.objects.get(id=user_id_from_session)  # Должно быть числовое значение
+    except User.DoesNotExist:
+        logger.warning(f"User with ID {user_id_from_session} not found.")
+        return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Проверка прав доступа: только администраторы могут обновлять пользователей
+    if not user.is_superuser:
+        logger.warning(f"User {user_id_from_session} does not have permission to update.")
+        return Response({'detail': 'У вас нет прав для выполнения этого действия.'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        user_to_update = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(f"User with ID {user_id} not found.")
+        return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = UserSerializer(user_to_update, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
+        logger.info(f"User with ID {user_id} updated successfully.")
         return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
-    
+
+    logger.error(f"Validation errors: {serializer.errors}")
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
