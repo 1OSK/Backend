@@ -71,6 +71,6 @@ urlpatterns = [
     path('users/', create_user, name='create_user'),  # Создание пользователя
     path('users/login/', login_user, name='login_user'),  # Вход пользователя
     path('users/logout/', logout_user, name='logout_user'),  # Выход пользователя
-    path('users/<int:user_id>/', update_user, name='update_user'),  # Обновление пользователя по ID
+    path('users/update/', update_user, name='update_user'),  # Обновление пользователя по ID
     
 ]
