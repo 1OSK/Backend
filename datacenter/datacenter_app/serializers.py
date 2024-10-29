@@ -37,7 +37,7 @@ class DatacenterOrderServiceSerializer(serializers.ModelSerializer):
 class DatacenterOrderSerializer(serializers.ModelSerializer):
     creator_name = serializers.CharField(source='creator.email', read_only=True)
     moderator_name = serializers.CharField(source='moderator.email', read_only=True, allow_null=True, label="Email модератора")
-    services = DatacenterOrderServiceSerializer(many=True, source='datacenterorderservice_set')  # Связь с услугами
+    datacenters = DatacenterOrderServiceSerializer(many=True, source='datacenterorderservice_set')  # Связь с услугами
     creation_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', read_only=True)
     formation_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', allow_null=True, required=False)
     completion_date = serializers.DateTimeField(format='%Y-%m-%dT%H:%M', allow_null=True, required=False)
@@ -55,7 +55,7 @@ class DatacenterOrderSerializer(serializers.ModelSerializer):
             'delivery_address', 
             'delivery_time', 
             'total_price', 
-            'services'  # Услуги в составе заказа
+            'datacenters'  # Услуги в составе заказа
         ]
     
     def get_fields(self):

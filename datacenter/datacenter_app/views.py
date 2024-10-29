@@ -12,7 +12,7 @@ from rest_framework import status
 from django.contrib.auth import authenticate, login, logout
 import logging
 from .models import DatacenterService, DatacenterOrder, DatacenterOrderService
-from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer, DatacenterServiceImageSerializer, LoginSerializer
+from .serializers import DatacenterServiceSerializer, DatacenterOrderSerializer, DatacenterOrderServiceSerializer, DatacenterServiceImageSerializer, LoginSerializer, RegisterSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.views import APIView
@@ -944,14 +944,12 @@ def list_users(request):
 
 @swagger_auto_schema(
     method='post',
-    request_body=UserSerializer,
+    request_body=RegisterSerializer,
     responses={
         201: openapi.Response('Пользователь успешно зарегистрирован', 
                               schema=openapi.Schema(type=openapi.TYPE_OBJECT, 
                                                     properties={
                                                         'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя'),
-                                                        'is_staff': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Является ли пользователь менеджером'),
-                                                        'is_superuser': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Является ли пользователь администратором'),
                                                     })),
         400: 'Ошибка валидации данных'
     },
@@ -961,14 +959,12 @@ def list_users(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Для регистрации без аутентификации
 def create_user(request):
-    serializer = UserSerializer(data=request.data)
+    serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
         return Response(
             {
                 "email": user.email,
-                "is_staff": user.is_staff,
-                "is_superuser": user.is_superuser,
             },
             status=status.HTTP_201_CREATED
         )
