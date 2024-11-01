@@ -2,7 +2,6 @@ import logging
 from django.conf import settings
 from minio import Minio
 from django.core.files.uploadedfile import InMemoryUploadedFile
-from rest_framework.response import Response
 
 # Создаем логгер
 logger = logging.getLogger('myapp')  # Замените 'myapp' на имя вашего приложения
@@ -11,6 +10,7 @@ def process_file_upload(file_object: InMemoryUploadedFile, client, image_name):
     try:
         # Загружаем объект в MinIO
         client.put_object(settings.AWS_STORAGE_BUCKET_NAME, image_name, file_object, file_object.size)
+        # Формируем правильный URL
         return f"{settings.AWS_S3_ENDPOINT_URL}/{settings.AWS_STORAGE_BUCKET_NAME}/{image_name}"
     except Exception as e:
         logger.error(f"Ошибка при загрузке файла {image_name}: {e}")  # Логируем ошибку
@@ -38,6 +38,7 @@ def add_pic(new_stock, pic):
             data=pic,
             length=pic.size
         )
+        # Формируем правильный URL для загруженного изображения
         image_url = f"{settings.AWS_S3_ENDPOINT_URL}/{settings.AWS_STORAGE_BUCKET_NAME}/{img_obj_name}"
         new_stock.image_url = image_url  # Сохраняем URL изображения
         new_stock.save()

@@ -34,26 +34,25 @@ from rest_framework.decorators import authentication_classes
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import AuthenticationFailed
-from .permissions import IsManagerOrAdmin, IsAdmin, IsManager, IsAuthenticatedAndManagerOrOwnOrders
+
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 import redis
 from django.contrib.auth import authenticate, login
-from django.http import HttpResponse
-import uuid
+
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
-from .middleware import CookiePermissionMiddleware
-from django.http import JsonResponse
+
 from .redis import redis_client 
-from rest_framework_simplejwt.tokens import RefreshToken
-from uuid import uuid4
-from rest_framework_simplejwt.authentication import JWTAuthentication
+
+
+
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.authentication import TokenAuthentication 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+
+
+
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
