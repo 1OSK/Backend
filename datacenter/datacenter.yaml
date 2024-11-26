@@ -1,0 +1,430 @@
+Подключение к Redis успешно!
+Key: test_key, Value: Hello, Redis!
+Значение по ключу 'test_key': Hello, Redis!
+openapi: 3.0.2
+info:
+  title: ''
+  version: ''
+paths:
+  /datacenter-services/:
+    get:
+      operationId: listget_datacenter_service_lists
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-services/{id}/:
+    get:
+      operationId: retrieveget_datacenter_service
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-orders/:
+    get:
+      operationId: listlist_orders
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {}
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-orders/{id}/:
+    get:
+      operationId: retrieveretrieve_order
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-services/create/:
+    post:
+      operationId: createcreate_datacenter_service
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-services/{id}/add-to-draft/:
+    post:
+      operationId: createadd_to_draft
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-services/{id}/add-image/:
+    post:
+      operationId: createadd_image
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /users/:
+    post:
+      operationId: createcreate_user
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - users
+  /users/login/:
+    post:
+      operationId: createlogin_user
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - users
+  /users/logout/:
+    post:
+      operationId: createlogout_user
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - users
+  /datacenter-services/{id}/update/:
+    put:
+      operationId: updateupdate_datacenter_service
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-orders/{id}/submit/:
+    put:
+      operationId: updatesubmit_order
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-orders/{id}/finalize/:
+    put:
+      operationId: updatefinalize_order
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-orders/{id}/update/:
+    put:
+      operationId: updateupdate_order
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-orders-services/{datacenter_order_id}/datacenter-services/{datacenter_service_id}/update/:
+    put:
+      operationId: updateupdate_service_quantity_in_order
+      description: ''
+      parameters:
+      - name: datacenter_order_id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      - name: datacenter_service_id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - datacenter-orders-services
+  /users/update/:
+    put:
+      operationId: updateupdate_user
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - users
+  /datacenter-services/{id}/delete/:
+    delete:
+      operationId: destroydelete_datacenter_service
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '204':
+          description: ''
+      tags:
+      - datacenter-services
+  /datacenter-orders/{id}/delete/:
+    delete:
+      operationId: destroydelete_order
+      description: ''
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '204':
+          description: ''
+      tags:
+      - datacenter-orders
+  /datacenter-orders-services/{datacenter_order_id}/datacenter-services/{datacenter_service_id}/delete/:
+    delete:
+      operationId: destroydelete_service_from_order
+      description: ''
+      parameters:
+      - name: datacenter_order_id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      - name: datacenter_service_id
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '204':
+          description: ''
+      tags:
+      - datacenter-orders-services

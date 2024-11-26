@@ -14,4 +14,4 @@ docker compose -f datacenter/docker/docker-compose.yml up -d &&
 
 # 4. Запуск Django сервера
 cd datacenter &&
-python manage.py runserver --verbosity 3
+python manage.py runserver 0.0.0.0:8000 --verbosity 3

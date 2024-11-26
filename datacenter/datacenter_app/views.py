@@ -94,6 +94,9 @@ def get_filtered_queryset(queryset):
     """Фильтруем queryset, исключая товары со статусом 'deleted'"""
     return queryset.exclude(status='deleted')
 
+
+#	DatacenterService: создаётся новая запись.
+#	CustomUser: проверяется, что пользователь аутентифицирован и является администратором.
 @swagger_auto_schema(
     method='post',
     request_body=DatacenterServiceSerializer,
@@ -130,6 +133,11 @@ def create_datacenter_service(request):
     response_data = DatacenterServiceSerializer(new_datacenter_service).data
     return Response(response_data, status=status.HTTP_201_CREATED)
 
+
+
+#   •	DatacenterService: возвращается список товаров с фильтрацией по цене.
+#	•	DatacenterOrder: для подсчёта количества услуг в черновом заказе текущего пользователя.
+#	•	DatacenterOrderService: для работы с услугами в черновом заказе.
 @swagger_auto_schema(
     method='get',
     manual_parameters=[
@@ -226,6 +234,9 @@ def get_datacenter_service_list(request):
 
     return Response(response_data, status=status.HTTP_200_OK)
 
+
+
+# •	DatacenterService: возвращает данные товара по ID.
 @swagger_auto_schema(
     method='get',
     responses={200: DatacenterServiceSerializer},
@@ -243,6 +254,10 @@ def get_datacenter_service(request, pk):
     # Возвращаем ответ
     return Response(datacenter_service_data)
 
+
+
+#   •	DatacenterService: обновляется существующий товар.
+#	•	CustomUser: проверяется, что пользователь аутентифицирован и является администратором.
 @swagger_auto_schema(
     method='put',
     request_body=DatacenterServiceSerializer,
@@ -285,6 +300,10 @@ def update_datacenter_service(request, pk):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+#   •	DatacenterService: меняет статус товара на deleted.
+#	•	CustomUser: проверяется, что пользователь аутентифицирован и является администратором.
 
 @swagger_auto_schema(
     method='delete',
@@ -338,7 +357,10 @@ def delete_datacenter_service(request, pk):
 
     return Response({'message': 'Товар успешно удален'}, status=status.HTTP_200_OK)
 
-
+#   •	DatacenterOrder: создаёт или обновляет черновой заказ для пользователя.
+#	•	DatacenterService: добавляет услугу в черновик.
+#	•	DatacenterOrderService: добавляет или обновляет количество услуг в черновом заказе.
+#	•	CustomUser: проверяется, что пользователь аутентифицирован.
 @swagger_auto_schema(
     method='post',
     responses={201: DatacenterOrderSerializer, 400: "Ошибка при добавлении в черновик"},
@@ -411,6 +433,9 @@ def add_to_draft(request, pk):
     )
 
 
+
+#   •	DatacenterService: добавляет или обновляет URL изображения товара.
+#	•	CustomUser: проверяется, что пользователь аутентифицирован и является администратором.
 @swagger_auto_schema(
     method='post',
     request_body=openapi.Schema(
@@ -486,7 +511,7 @@ def add_image(request, pk):
 
 
 
-
+# DatacenterOrder
 @swagger_auto_schema(
     method='get',
     manual_parameters=[
@@ -545,7 +570,7 @@ def list_orders(request):
 
 
 
-
+# DatacenterOrder
 @swagger_auto_schema(
     method='get',
     responses={200: DatacenterOrderSerializer(), 404: "Заказ не найден"},
@@ -589,7 +614,7 @@ def retrieve_order(request, pk):
     serializer = DatacenterOrderSerializer(datacenter_order)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-
+# DatacenterOrder
 @swagger_auto_schema(
     method='delete',
     responses={204: "Заказ удалён", 404: "Заказ не найден", 400: "Невозможно удалить"},
@@ -629,7 +654,7 @@ def delete_order(request, pk):
 
     return Response({'message': 'Заказ успешно удалён.'}, status=status.HTTP_204_NO_CONTENT)
 
-
+# DatacenterOrder
 @swagger_auto_schema(
     method='put',
     responses={200: "Заказ подтверждён", 404: "Заказ не найден", 400: "Ошибка подтверждения"},
@@ -679,7 +704,7 @@ def submit_order(request, pk):
     serializer = DatacenterOrderSerializer(datacenter_order)
     return Response({'message': 'Заказ подтверждён успешно', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
 
-
+# DatacenterOrder
 @swagger_auto_schema(
     method='put',
     request_body=openapi.Schema(
@@ -748,6 +773,8 @@ def finalize_order(request, pk):
     serializer = DatacenterOrderSerializer(datacenter_order)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
+
+# DatacenterOrder
 @swagger_auto_schema(
     method='put',
     request_body=DatacenterOrderSerializer,
@@ -797,7 +824,7 @@ def update_order(request, pk):
     # Возвращаем ошибки, если данные невалидны
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
+# DatacenterOrder, DatacenterService, DatacenterOrderService
 @swagger_auto_schema(
     method='delete',
     operation_description="Удаление товара из заказа",
@@ -855,7 +882,7 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
 
     return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
 
-
+# DatacenterOrder, DatacenterService, DatacenterOrderService
 @swagger_auto_schema(
     method='put',
     operation_description="Изменение количества товаров в заказе",
@@ -990,14 +1017,13 @@ session_storage = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDI
         200: openapi.Response('Успешный вход', 
                               schema=openapi.Schema(type=openapi.TYPE_OBJECT, 
                                                     properties={
-                                                        'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email пользователя'),
-                                                        'access': openapi.Schema(type=openapi.TYPE_STRING, description='Access токен'),
-                                                        'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh токен'),
+                                                        'session_id': openapi.Schema(type=openapi.TYPE_STRING, description='Идентификатор сессии пользователя, сохранённый в Redis'),
                                                     })),
-        401: 'Неверный email или пароль.'
+        401: 'Неверный email или пароль.',
+        500: 'Ошибка создания сессии или сохранения в Redis.'
     },
     operation_summary="Вход пользователя",
-    operation_description="Аутентификация пользователя по email и паролю."
+    operation_description="Аутентификация пользователя по email и паролю. При успешной аутентификации создается сессия, которая сохраняется в Redis с уникальным идентификатором сессии."
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Для входа без ограничений
@@ -1035,27 +1061,33 @@ def login_user(request):
 @swagger_auto_schema(
     method='post',
     responses={
-        200: 'Успешный выход из системы',
+        200: 'Успешный выход из системы.',
         401: 'Отсутствует идентификатор сессии.'
     },
     operation_summary="Выход пользователя",
-    operation_description="Разлогинивает пользователя."
+    operation_description="Метод для выхода пользователя из системы. Удаляет session_id из Redis и завершает сессию."
 )
 @api_view(['POST'])
-@permission_classes([AllowAny])  # Доступ только для аутентифицированных пользователей
+@permission_classes([AllowAny])  # Разрешаем доступ всем пользователям
 def logout_user(request):
-    # Извлекаем sessionid из куки
+    """
+    Разлогинивает пользователя.
+    
+    Этот метод удаляет идентификатор сессии пользователя из Redis и завершает текущую сессию.
+    """
+    # Извлекаем session_id из куки
     session_id = request.COOKIES.get('sessionid')
 
     if not session_id:
         return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-    # Удаляем идентификатор пользователя из Redis
+    # Удаляем идентификатор сессии из Redis
     redis_client.delete(session_id)
 
     # Выход из системы
     logout(request)
 
+    # Возвращаем успешный ответ
     return Response({'status': 'Success'}, status=status.HTTP_200_OK)
 
 

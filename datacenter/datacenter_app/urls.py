@@ -7,14 +7,14 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from . import views
 
-
+from drf_yasg.renderers import OpenAPIRenderer, SwaggerUIRenderer
 
 
 
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="My API",
+        title="My Datacenter",
         default_version='v1',
         description="Test description",
         terms_of_service="https://www.google.com/policies/terms/",
@@ -31,7 +31,8 @@ urlpatterns = [
     
     
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    
+    path('swagger.yaml/', schema_view.without_ui(cache_timeout=0), name='schema-yaml'),
+
     path('datacenter-services/', get_datacenter_service_list, name='datacenter_service_list'),  # Путь для списка услуг
     path('datacenter-services/<int:pk>/', get_datacenter_service, name='datacenter_service_detail'),  # Путь для получения услуги по ID
     path('datacenter-services/create/', create_datacenter_service, name='datacenter_service_create'),  # Путь для добавления новой услуги
