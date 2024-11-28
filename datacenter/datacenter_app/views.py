@@ -1062,30 +1062,50 @@ def login_user(request):
     method='post',
     responses={
         200: 'Успешный выход из системы.',
-        401: 'Отсутствует идентификатор сессии.'
+        400: 'Некорректный запрос. Отсутствует session_id в теле запроса.',
+        401: 'Отсутствует идентификатор сессии или сессия не найдена.',
     },
     operation_summary="Выход пользователя",
-    operation_description="Метод для выхода пользователя из системы. Удаляет session_id из Redis и завершает сессию."
+    operation_description="Метод для выхода пользователя из системы. Удаляет session_id из Redis и завершает сессию. "
+                          "session_id передается в теле запроса."
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Разрешаем доступ всем пользователям
 def logout_user(request):
     """
     Разлогинивает пользователя.
-    
+
     Этот метод удаляет идентификатор сессии пользователя из Redis и завершает текущую сессию.
+    session_id передается в теле запроса.
     """
-    # Извлекаем session_id из куки
-    session_id = request.COOKIES.get('sessionid')
+    # Извлекаем session_id из тела запроса
+    session_id = request.data.get('sessionid')
 
     if not session_id:
-        return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_401_UNAUTHORIZED)
+        # Логируем ошибку, когда session_id не передан
+        logger.warning("Запрос на выход: отсутствует session_id в теле запроса.")
+        return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Логируем информацию о получении session_id
+    logger.info(f"Попытка выхода пользователя с session_id: {session_id}")
+
+    # Проверяем, существует ли такая сессия в Redis
+    if not redis_client.exists(session_id):
+        # Логируем ошибку, если сессия не найдена
+        logger.warning(f"Сессия с session_id {session_id} не найдена в Redis.")
+        return Response({'detail': 'Не найдено сессии с указанным идентификатором.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # Логируем информацию об успешном удалении сессии
+    logger.info(f"Сессия с session_id {session_id} найдена. Удаляем из Redis.")
 
     # Удаляем идентификатор сессии из Redis
     redis_client.delete(session_id)
 
     # Выход из системы
     logout(request)
+
+    # Логируем успешный выход
+    logger.info(f"Пользователь с session_id {session_id} успешно разлогинен.")
 
     # Возвращаем успешный ответ
     return Response({'status': 'Success'}, status=status.HTTP_200_OK)
