@@ -383,8 +383,7 @@ def add_to_draft(request, pk):
     3. Получение услуги по переданному ID (pk).
     4. Получение или создание черновика.
     5. Добавление услуги в черновик.
-    6. Обновление общей стоимости черновика.
-    7. Возвращение сериализованного черновика.
+    6. Возвращение сериализованного черновика.
     """
     
     # Извлечение sessionid из куки
@@ -450,20 +449,13 @@ def add_to_draft(request, pk):
     # Обновляем количество товара
     if created:
         datacenter_order_service.quantity = 1  # Устанавливаем количество на 1
-        
     else:
         datacenter_order_service.quantity += 1  # Увеличиваем количество на 1
         
-
     datacenter_order_service.save()
 
-    # Обновляем общую стоимость черновика
-    datacenter_draft_order.total_price = sum(
-        service.quantity * service.service.price
-        for service in datacenter_draft_order.datacenterorderservice_set.all()
-    )
-    datacenter_draft_order.save()
-    logger.info(f"Обновлена общая стоимость черновика. Новая стоимость: {datacenter_draft_order.total_price} руб.")
+    # Логируем добавление товара
+    logger.info(f"Товар с ID {pk} добавлен в черновик заказа. Количество: {datacenter_order_service.quantity}.")
 
     # Сериализуем черновик
     serializer = DatacenterOrderSerializer(datacenter_draft_order)
@@ -709,11 +701,15 @@ def delete_order(request, pk):
 @api_view(['PUT'])
 @permission_classes([AllowAny])  # Внешняя проверка на уровне сессий
 def submit_order(request, pk):
+    logger.info(f"Запрос на подтверждение заказа с ID {pk} поступил.")
+
     # Получаем session_id из куки
     session_id = request.COOKIES.get('sessionid')
+    logger.debug(f"Получен session_id: {session_id}")
 
     # Проверяем, есть ли session_id в Redis
     if not session_id or not session_storage.get(session_id):
+        logger.warning(f"Не авторизован. Session_id {session_id} не найден в Redis.")
         return Response(
             {'error': 'Пожалуйста, авторизуйтесь, чтобы подтвердить заказ.'},
             status=status.HTTP_401_UNAUTHORIZED
@@ -721,33 +717,60 @@ def submit_order(request, pk):
 
     # Получаем user_id из Redis
     user_id = session_storage.get(session_id).decode('utf-8')
+    logger.debug(f"Получен user_id из Redis: {user_id}")
 
     # Получаем заказ по ID
-    datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
+    try:
+        datacenter_order = get_object_or_404(DatacenterOrder, id=pk)
+        logger.info(f"Заказ с ID {pk} найден в базе данных.")
+    except DatacenterOrder.DoesNotExist:
+        logger.error(f"Заказ с ID {pk} не найден.")
+        return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
     # Проверка, является ли текущий пользователь создателем заказа
     if str(datacenter_order.creator_id) != user_id:
+        logger.warning(f"Пользователь {user_id} не является создателем заказа с ID {pk}.")
         return Response({'error': 'У вас нет прав на подтверждение этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
     if datacenter_order.status != 'draft':
+        logger.warning(f"Заказ с ID {pk} уже не находится в статусе 'draft'.")
         return Response({'error': 'Заказ уже был отправлен или не может быть отправлен.'}, status=status.HTTP_400_BAD_REQUEST)
 
     delivery_address = datacenter_order.delivery_address
     delivery_time = datacenter_order.delivery_time
 
     if not delivery_address:
+        logger.warning(f"Адрес доставки для заказа с ID {pk} не указан.")
         return Response({'error': 'Адрес доставки не указан в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     if not delivery_time:
+        logger.warning(f"Время доставки для заказа с ID {pk} не указано.")
         return Response({'error': 'Время доставки не указано в заявке.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Изменяем статус заказа на 'formed'
+    # Рассчитываем полную стоимость заказа
+    total_price = 0
+    logger.info(f"Рассчитываем полную стоимость для заказа с ID {pk}.")
+    for order_service in DatacenterOrderService.objects.filter(order=datacenter_order):
+        item_total = order_service.quantity * order_service.service.price
+        total_price += item_total
+        logger.debug(f"Добавлена стоимость для товара: {order_service.service.name}, количество: {order_service.quantity}, цена: {order_service.service.price}, итог: {item_total}")
+
+    logger.info(f"Общая стоимость заказа с ID {pk}: {total_price}")
+
+    # Обновляем статус заказа, дату подтверждения и полную стоимость
     datacenter_order.status = 'formed'
     datacenter_order.formation_date = timezone.now()
+    datacenter_order.total_price = total_price
     datacenter_order.save()
 
+    # Серилизуем обновленный заказ
     serializer = DatacenterOrderSerializer(datacenter_order)
+    logger.info(f"Заказ с ID {pk} успешно подтверждён.")
+
     return Response({'message': 'Заказ подтверждён успешно', 'datacenter_order': serializer.data}, status=status.HTTP_200_OK)
+
+
+
 
 # DatacenterOrder
 @swagger_auto_schema(
@@ -974,9 +997,11 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
 def update_service_quantity_in_order(request, datacenter_order_id, datacenter_service_id):
     # Получаем session_id из куки
     session_id = request.COOKIES.get('sessionid')
+    logger.debug(f"Получен session_id: {session_id}")  # Логируем session_id
 
     # Проверяем, есть ли session_id в Redis
     if not session_id or not session_storage.get(session_id):
+        logger.warning(f"Неавторизованный доступ для session_id: {session_id}")
         return Response(
             {'error': 'Пожалуйста, авторизуйтесь, чтобы изменить количество товаров в заказе.'},
             status=status.HTTP_401_UNAUTHORIZED
@@ -984,46 +1009,74 @@ def update_service_quantity_in_order(request, datacenter_order_id, datacenter_se
 
     # Получаем user_id из Redis
     user_id = session_storage.get(session_id).decode('utf-8')
-    user = get_object_or_404(User, id=user_id)  # Получаем пользователя по user_id
+    logger.debug(f"Получен user_id из Redis: {user_id}")
+
+    try:
+        user = get_object_or_404(User, id=user_id)  # Получаем пользователя по user_id
+    except Exception as e:
+        logger.error(f"Ошибка при получении пользователя по user_id: {user_id}, ошибка: {e}")
+        return Response({'error': 'Ошибка при получении пользователя.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    logger.debug(f"Пользователь с ID {user.id} найден")
 
     # Получаем заказ по ID
-    datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+    try:
+        datacenter_order = get_object_or_404(DatacenterOrder, id=datacenter_order_id)
+    except Exception as e:
+        logger.error(f"Ошибка при получении заказа с ID: {datacenter_order_id}, ошибка: {e}")
+        return Response({'error': 'Ошибка при получении заказа.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    logger.debug(f"Заказ с ID {datacenter_order.id} найден")
 
     # Проверяем статус заказа
     if datacenter_order.status != 'draft':
+        logger.warning(f"Попытка изменения заказа с неподобающим статусом: {datacenter_order.status}")
         return Response({'error': 'Заказ не может быть изменен, так как он не в статусе draft.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Проверяем, является ли пользователь создателем заказа
     if str(datacenter_order.creator_id) != str(user.id):
+        logger.warning(f"Пользователь {user.id} пытается изменить заказ, который не был создан им.")
         return Response({'error': 'У вас нет прав на изменение количества товаров в этом заказе.'}, status=status.HTTP_403_FORBIDDEN)
 
     # Получаем услугу из заказа
-    datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
+    try:
+        datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
+    except Exception as e:
+        logger.error(f"Ошибка при получении услуги с ID: {datacenter_service_id}, ошибка: {e}")
+        return Response({'error': 'Ошибка при получении услуги.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    logger.debug(f"Услуга с ID {datacenter_service.id} найдена")
 
     # Получаем запись о товаре в заказе
     datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
+    if not datacenter_order_service:
+        logger.warning(f"Товар с ID {datacenter_service.id} не найден в заказе с ID {datacenter_order.id}")
+        return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
 
-    if datacenter_order_service:
-        data = request.data
-        new_quantity = data.get('quantity')
+    # Обрабатываем изменение количества
+    data = request.data
+    new_quantity = data.get('quantity')
 
-        if new_quantity is None:
-            return Response({'error': 'Не указано количество'}, status=status.HTTP_400_BAD_REQUEST)
+    if new_quantity is None:
+        logger.warning(f"Не указано количество для товара с ID {datacenter_service.id} в заказе с ID {datacenter_order.id}")
+        return Response({'error': 'Не указано количество'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            new_quantity = int(new_quantity)
-            if new_quantity < 1:
-                return Response({'error': 'Количество должно быть положительным'}, status=status.HTTP_400_BAD_REQUEST)
-        except ValueError:
-            return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        new_quantity = int(new_quantity)
+        if new_quantity < 1:
+            logger.warning(f"Некорректное количество товара: {new_quantity}. Оно должно быть положительным.")
+            return Response({'error': 'Количество должно быть положительным'}, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError:
+        logger.warning(f"Некорректное количество для товара с ID {datacenter_service.id}. Должно быть числовым значением.")
+        return Response({'error': 'Некорректное количество'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Обновляем количество товара
-        datacenter_order_service.quantity = new_quantity
-        datacenter_order_service.save()
-        return Response({'message': 'Количество товаров обновлено в заказе'}, status=status.HTTP_200_OK)
+    # Обновляем количество товара
+    datacenter_order_service.quantity = new_quantity
+    datacenter_order_service.save()
 
-    return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
+    logger.info(f"Количество товара с ID {datacenter_service.id} в заказе {datacenter_order.id} обновлено на {new_quantity}")
 
+    return Response({'message': 'Количество товаров обновлено в заказе'}, status=status.HTTP_200_OK)
 
 
 logger = logging.getLogger(__name__)
