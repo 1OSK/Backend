@@ -1111,8 +1111,7 @@ def login_user(request):
         401: 'Отсутствует идентификатор сессии или сессия не найдена.',
     },
     operation_summary="Выход пользователя",
-    operation_description="Метод для выхода пользователя из системы. Удаляет session_id из Redis и завершает сессию. "
-                          "session_id передается в теле запроса."
+    operation_description="Метод для выхода пользователя из системы. Удаляет session_id из Redis, завершает сессию и удаляет черновые заказы."
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Разрешаем доступ всем пользователям
@@ -1121,12 +1120,11 @@ def logout_user(request):
     Разлогинивает пользователя.
 
     Этот метод удаляет идентификатор сессии пользователя из Redis и завершает текущую сессию.
+    Также удаляет черновые заказы, если они есть, но только если пользователь является их создателем.
     session_id передается в теле запроса.
     """
     # Извлекаем session_id из тела запроса
-    session_id = (
-        request.COOKIES.get('sessionid') 
-    )
+    session_id = request.COOKIES.get('sessionid')
 
     if not session_id:
         # Логируем ошибку, когда session_id не передан
@@ -1142,11 +1140,32 @@ def logout_user(request):
         logger.warning(f"Сессия с session_id {session_id} не найдена в Redis.")
         return Response({'detail': 'Не найдено сессии с указанным идентификатором.'}, status=status.HTTP_401_UNAUTHORIZED)
 
+    # Получаем user_id из Redis перед удалением сессии
+    user_id = redis_client.get(session_id)  # Нет необходимости в decode()
+
     # Логируем информацию об успешном удалении сессии
     logger.info(f"Сессия с session_id {session_id} найдена. Удаляем из Redis.")
 
     # Удаляем идентификатор сессии из Redis
     redis_client.delete(session_id)
+
+    # Логика удаления черновых заказов
+    try:
+        # Ищем черновые заказы этого пользователя
+        draft_orders = DatacenterOrder.objects.filter(creator_id=user_id, status='draft')
+
+        # Если черновые заказы найдены, удаляем их
+        deleted_count = draft_orders.delete()[0]
+
+        # Логируем информацию о количестве удалённых черновых заказов
+        logger.info(f"Удалено {deleted_count} черновых заказов для пользователя с user_id {user_id}.")
+
+        # Если черновых заказов не было, можно вернуть соответствующее сообщение
+        if deleted_count == 0:
+            logger.info(f"Нет черновых заказов для удаления у пользователя с user_id {user_id}.")
+    except Exception as e:
+        # Логируем ошибку, если произошла ошибка при удалении заказов
+        logger.error(f"Ошибка при удалении черновых заказов: {e}")
 
     # Выход из системы
     logout(request)
