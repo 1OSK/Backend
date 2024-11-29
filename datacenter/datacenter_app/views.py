@@ -199,6 +199,9 @@ def get_datacenter_service_list(request):
                 )
                 datacenter_draft_order_id = datacenter_draft_order.id
 
+
+    logger.info(f"Черновик найден: ID {datacenter_draft_order_id}, Количество товаров: {datacenter_services_count}")
+
     # Получаем параметры фильтрации
     min_price = request.GET.get('datacenter_min_price')
     max_price = request.GET.get('datacenter_max_price')
@@ -365,13 +368,32 @@ def delete_datacenter_service(request, pk):
     method='post',
     responses={201: DatacenterOrderSerializer, 400: "Ошибка при добавлении в черновик"},
     operation_summary="Добавить товар в черновик заказа",
+    operation_description="Метод для добавления услуги в черновик заказа. Проверяет наличие sessionid, "
+                          "выбирает или создает черновик для текущего пользователя и добавляет выбранный товар в этот черновик."
 )
 @api_view(['POST'])
 def add_to_draft(request, pk):
+    """
+    Добавляет услугу в черновик заказа. Если черновик еще не существует для пользователя,
+    он создается. Если услуга уже есть в черновике, ее количество увеличивается на 1.
+    
+    **Шаги:**
+    1. Проверка наличия sessionid в куки.
+    2. Проверка сессии пользователя в Redis.
+    3. Получение услуги по переданному ID (pk).
+    4. Получение или создание черновика.
+    5. Добавление услуги в черновик.
+    6. Обновление общей стоимости черновика.
+    7. Возвращение сериализованного черновика.
+    """
+    
     # Извлечение sessionid из куки
-    session_id = request.COOKIES.get('sessionid')
+    session_id = (
+        request.COOKIES.get('sessionid') 
+    )
 
     if not session_id:
+        logger.error("Session ID отсутствует в куки.")
         return Response(
             {"error": "sessionid не предоставлен."},
             status=status.HTTP_400_BAD_REQUEST
@@ -381,16 +403,31 @@ def add_to_draft(request, pk):
     user_id = redis_client.get(session_id)
     
     if user_id is None:
+        logger.warning(f"Неверный sessionid или сессия истекла. Session ID: {session_id}")
         return Response(
             {"error": "Неверный sessionid или сессия истекла."},
             status=status.HTTP_403_FORBIDDEN
         )
 
     # Получение текущего пользователя
-    user = get_object_or_404(CustomUser, id=user_id)
+    try:
+        user = get_object_or_404(CustomUser, id=user_id)
+    except CustomUser.DoesNotExist:
+        logger.error(f"Пользователь с ID {user_id} не найден.")
+        return Response(
+            {"error": "Пользователь не найден."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
     # Получение услуги по переданному ID
-    datacenter_service = get_object_or_404(DatacenterService, id=pk)
+    try:
+        datacenter_service = get_object_or_404(DatacenterService, id=pk)
+    except DatacenterService.DoesNotExist:
+        logger.error(f"Услуга с ID {pk} не найдена.")
+        return Response(
+            {"error": "Услуга не найдена."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
     # Получаем или создаем черновик для текущего пользователя
     datacenter_draft_order, created = DatacenterOrder.objects.get_or_create(
@@ -398,6 +435,10 @@ def add_to_draft(request, pk):
         status='draft',
         defaults={'total_price': 0}  # Устанавливаем начальную цену
     )
+    if created:
+        logger.info(f"Создан новый черновик для пользователя {user_id}. ID заказа: {datacenter_draft_order.id}")
+    else:
+        logger.info(f"Черновик заказа уже существует для пользователя {user_id}. ID заказа: {datacenter_draft_order.id}")
 
     # Создаем или обновляем услугу в черновике
     datacenter_order_service, created = DatacenterOrderService.objects.get_or_create(
@@ -409,8 +450,10 @@ def add_to_draft(request, pk):
     # Обновляем количество товара
     if created:
         datacenter_order_service.quantity = 1  # Устанавливаем количество на 1
+        
     else:
         datacenter_order_service.quantity += 1  # Увеличиваем количество на 1
+        
 
     datacenter_order_service.save()
 
@@ -420,9 +463,12 @@ def add_to_draft(request, pk):
         for service in datacenter_draft_order.datacenterorderservice_set.all()
     )
     datacenter_draft_order.save()
+    logger.info(f"Обновлена общая стоимость черновика. Новая стоимость: {datacenter_draft_order.total_price} руб.")
 
     # Сериализуем черновик
     serializer = DatacenterOrderSerializer(datacenter_draft_order)
+
+    logger.info(f"Товар успешно добавлен в черновик заказа. ID черновика: {datacenter_draft_order.id}")
 
     return Response(
         {
@@ -431,7 +477,6 @@ def add_to_draft(request, pk):
         },
         status=status.HTTP_201_CREATED
     )
-
 
 
 #   •	DatacenterService: добавляет или обновляет URL изображения товара.
@@ -1079,11 +1124,13 @@ def logout_user(request):
     session_id передается в теле запроса.
     """
     # Извлекаем session_id из тела запроса
-    session_id = request.data.get('sessionid')
+    session_id = (
+        request.COOKIES.get('sessionid') 
+    )
 
     if not session_id:
         # Логируем ошибку, когда session_id не передан
-        logger.warning("Запрос на выход: отсутствует session_id в теле запроса.")
+        logger.warning("Запрос на выход: отсутствует session_id.")
         return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Логируем информацию о получении session_id
