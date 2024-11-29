@@ -854,12 +854,46 @@ def update_order(request, pk):
     if datacenter_order.status == 'deleted':
         return Response({'error': 'Обновление удалённых заказов невозможно.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Проверяем, что заказ находится в статусе 'draft'
+    if datacenter_order.status != 'draft':
+        return Response({'error': 'Только заказ в статусе "Черновик" может быть обновлён.'}, status=status.HTTP_400_BAD_REQUEST)
+
     # Проверка, является ли текущий пользователь создателем заказа
     if str(datacenter_order.creator_id) != user_id:
         return Response({'error': 'У вас нет прав на обновление этого заказа.'}, status=status.HTTP_403_FORBIDDEN)
 
+    # Получаем данные из запроса и обновляем только необходимые поля
+    delivery_address = request.data.get('delivery_address', None)
+    delivery_time = request.data.get('delivery_time', None)
+
+    if delivery_address is None:
+        delivery_address = datacenter_order.delivery_address
+    if delivery_time is None:
+        delivery_time = datacenter_order.delivery_time
+
+    # Логируем изменения, если они есть
+    changes = {}
+    if delivery_address != datacenter_order.delivery_address:
+        changes['delivery_address'] = {
+            'old': datacenter_order.delivery_address,
+            'new': delivery_address
+        }
+    if delivery_time != datacenter_order.delivery_time:
+        changes['delivery_time'] = {
+            'old': datacenter_order.delivery_time,
+            'new': delivery_time
+        }
+
+    # Если есть изменения, выводим их в лог
+    if changes:
+        logger.info(f"Изменения в заказе ID {pk}: {changes}")
+
     # Инициализируем сериализатор с частичным обновлением (partial=True)
-    serializer = DatacenterOrderSerializer(datacenter_order, data=request.data, partial=True)
+    serializer = DatacenterOrderSerializer(
+        datacenter_order,
+        data={'delivery_address': delivery_address, 'delivery_time': delivery_time},
+        partial=True  # Обновляем только те поля, которые были переданы
+    )
 
     # Проверяем, валидны ли данные
     if serializer.is_valid():
@@ -868,14 +902,12 @@ def update_order(request, pk):
 
     # Возвращаем ошибки, если данные невалидны
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 # DatacenterOrder, DatacenterService, DatacenterOrderService
 @swagger_auto_schema(
     method='delete',
-    operation_description="Удаление товара из заказа",
+    operation_description="Удаление всего товара из заказа",
     responses={
-        200: 'Количество товаров уменьшено на 1',
-        204: 'Товар удален из заказа',
+        200: 'Товар удален из заказа',
         400: 'Заказ удален или не может быть изменен',
         404: 'Товар не найден в заказе',
     }
@@ -911,22 +943,15 @@ def delete_service_from_order(request, datacenter_order_id, datacenter_service_i
     # Получаем услугу из заказа
     datacenter_service = get_object_or_404(DatacenterService, id=datacenter_service_id)
 
-    # Находим соответствующую услугу в заказе
-    datacenter_order_service = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service).first()
+    # Находим все записи об услуге в заказе
+    datacenter_order_services = DatacenterOrderService.objects.filter(order=datacenter_order, service=datacenter_service)
 
-    if datacenter_order_service:
-        if datacenter_order_service.quantity > 1:
-            # Уменьшаем количество товара
-            datacenter_order_service.quantity -= 1
-            datacenter_order_service.save()
-            return Response({'message': 'Количество товаров уменьшено на 1'}, status=status.HTTP_200_OK)
-        else:
-            # Удаляем товар, если количество 1
-            datacenter_order_service.delete()
-            return Response({'message': 'Товар удален из заказа'}, status=status.HTTP_204_NO_CONTENT)
-
-    return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
-
+    if datacenter_order_services.exists():
+        # Удаляем все записи о данной услуге
+        datacenter_order_services.delete()
+        return Response({'message': 'Товар полностью удален из заказа'}, status=status.HTTP_200_OK)
+    else:
+        return Response({'error': 'Товар не найден в заказе'}, status=status.HTTP_404_NOT_FOUND)
 # DatacenterOrder, DatacenterService, DatacenterOrderService
 @swagger_auto_schema(
     method='put',
