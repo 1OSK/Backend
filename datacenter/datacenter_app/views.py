@@ -562,16 +562,26 @@ def add_image(request, pk):
 )
 @api_view(['GET'])
 def list_orders(request):
+    # Логируем запрос
+    logger.info('Получение списка заказов с параметрами: %s', request.GET)
+
     # Извлекаем session_id из куки
     session_id = request.COOKIES.get('sessionid')
-
     if not session_id:
+        logger.warning('sessionid не предоставлен')
         return Response({'error': 'sessionid не предоставлен.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Логируем получение session_id
+    logger.info('sessionid получен: %s', session_id)
 
     # Извлекаем ID пользователя из Redis
     user_id = redis_client.get(session_id)
     if user_id is None:
+        logger.warning('Неверный sessionid или сессия истекла для sessionid: %s', session_id)
         return Response({'error': 'Неверный sessionid или сессия истекла.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Логируем успешное извлечение user_id
+    logger.info('user_id извлечен из Redis: %s', user_id)
 
     # Получаем пользователя по user_id
     user = get_object_or_404(CustomUser, id=user_id)
@@ -586,10 +596,12 @@ def list_orders(request):
 
     # Если пользователь не менеджер или администратор, фильтруем заказы по пользователю
     if not user.is_staff and not user.is_superuser:
+        logger.info('Фильтруем заказы по пользователю с ID: %s', user.id)
         datacenter_orders = datacenter_orders.filter(creator_id=user.id)
 
     # Фильтрация по статусу
     if status_filter:
+        logger.info('Фильтруем заказы по статусу: %s', status_filter)
         datacenter_orders = datacenter_orders.filter(status=status_filter)
 
     # Фильтрация по дате
@@ -597,15 +609,19 @@ def list_orders(request):
         try:
             start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d')
             end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d')
+            logger.info('Фильтруем заказы по дате от %s до %s', start_date, end_date)
             datacenter_orders = datacenter_orders.filter(creation_date__range=[start_date, end_date])
         except ValueError:
+            logger.error('Неверный формат даты: start_date=%s, end_date=%s', start_date, end_date)
             return Response({'error': 'Неверный формат даты. Используйте YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Сериализуем результат
     serializer = DatacenterOrderSerializer(datacenter_orders, many=True)
+
+    # Логируем успешное завершение запроса
+    logger.info('Запрос успешно выполнен, количество заказов: %d', len(serializer.data))
+
     return Response(serializer.data, status=status.HTTP_200_OK)
-
-
 
 # DatacenterOrder
 @swagger_auto_schema(
