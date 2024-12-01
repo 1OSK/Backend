@@ -1284,26 +1284,32 @@ def logout_user(request):
 )
 @api_view(['PUT'])
 def update_user(request):
+    # Логирование начала обработки запроса
+    logger.info("Processing user update request.")
+
+    # Получаем session_id из куки
     session_id = request.COOKIES.get('sessionid')
 
     if not session_id:
-        logger.warning("Session ID is missing.")
+        logger.warning("Session ID is missing in the request.")
         return Response({'detail': 'Отсутствует идентификатор сессии.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     # Получаем идентификатор пользователя из Redis по session_id
     user_id_from_session = redis_client.get(session_id)
 
     if user_id_from_session is None:
-        logger.warning("Invalid session.")
+        logger.warning(f"Session {session_id} does not correspond to any user.")
         return Response({'detail': 'Недействительная сессия.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     # Декодируем идентификатор пользователя
     user_id_from_session = user_id_from_session.decode('utf-8') if isinstance(user_id_from_session, bytes) else user_id_from_session
+    logger.info(f"Session {session_id} corresponds to user {user_id_from_session}.")
 
     try:
         user = User.objects.get(id=user_id_from_session)  # Получаем пользователя из сессии
+        logger.info(f"User {user_id_from_session} found in the database.")
     except User.DoesNotExist:
-        logger.warning(f"User with ID {user_id_from_session} not found.")
+        logger.warning(f"User with ID {user_id_from_session} not found in the database.")
         return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
 
     # Проверяем, является ли пользователь тем, кто хочет обновить данные
@@ -1311,23 +1317,35 @@ def update_user(request):
         logger.warning(f"User {user_id_from_session} tried to update another user's information.")
         return Response({'detail': 'Вы можете обновить только свои собственные данные.'}, status=status.HTTP_403_FORBIDDEN)
 
-    # Сохраняем старую почту для дальнейшего сравнения
+    # Сохраняем старую почту и пароль для дальнейшего сравнения
     old_email = user.email
-    
+    old_password = user.password  # Старый пароль
+    logger.info(f"User {user_id_from_session} is attempting to update email from {old_email}.")
+    logger.info(f"Old password: {old_password}")  # Логирование старого пароля
+
+    # Сериализация данных для обновления
     serializer = UserSerializer(user, data=request.data, partial=True)
-    
+
     if serializer.is_valid():
         # Проверяем, изменяется ли почта
         new_email = serializer.validated_data.get('email', old_email)
         if new_email != old_email:
-            # Здесь можно добавить логику для обработки изменения почты, если это необходимо
-            # Например, отправка подтверждения на новую почту
+            # Логируем изменение почты
             logger.info(f"User {user_id_from_session} is changing email from {old_email} to {new_email}.")
+
+        # Проверяем, изменяется ли пароль
+        new_password = serializer.validated_data.get('password', None)
+        if new_password:
+            # Логируем изменение пароля
+            logger.info(f"User {user_id_from_session} changed their password.")
+            logger.info(f"New password: {new_password}")  # Логирование нового пароля
         
+        # Сохраняем обновленные данные пользователя
         serializer.save()
-        logger.info(f"User with ID {user_id_from_session} updated successfully.")
+        logger.info(f"User {user_id_from_session} updated successfully.")
         return Response({'message': 'Информация о пользователе успешно обновлена'}, status=status.HTTP_200_OK)
 
-    logger.error(f"Validation errors: {serializer.errors}")
+    # Логируем ошибку валидации
+    logger.error(f"Validation errors occurred during user update: {serializer.errors}")
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

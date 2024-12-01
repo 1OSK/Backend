@@ -111,13 +111,22 @@ class UserSerializer(serializers.ModelSerializer):
     is_staff = serializers.BooleanField(default=False, required=False)
     is_superuser = serializers.BooleanField(default=False, required=False)
     password = serializers.CharField(write_only=True)
+
     class Meta:
         model = CustomUser
         fields = ['email', 'password', 'is_staff', 'is_superuser']
+
     def create(self, validated_data):
-        # Хешируем пароль перед сохранением
+        # Хешируем пароль перед сохранением при создании
         validated_data['password'] = make_password(validated_data['password'])
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Если пароль присутствует в данных, хешируем его перед обновлением
+        password = validated_data.get('password', None)
+        if password:
+            validated_data['password'] = make_password(password)
+        return super().update(instance, validated_data)
         
 
 class RegisterSerializer(serializers.ModelSerializer):
